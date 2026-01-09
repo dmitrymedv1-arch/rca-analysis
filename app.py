@@ -1863,6 +1863,29 @@ def main():
     st.title("📊 Scientific Data Visualization Dashboard")
     st.markdown("---")
     
+    # Определить all_plots здесь, в начале функции
+    ALL_PLOTS = [
+        ("1_distribution", "1. Distribution of Attention"),
+        ("2_country_network", "2. Country Collaboration Network"),
+        ("3_internationality", "3. Internationality vs Citations"),
+        ("4_journal_heatmap", "4. Journal-Year Heatmap"),
+        ("6_1_bubble_chart", "6.1 References vs Impact (Linear)"),
+        ("6_2_bubble_chart", "6.2 References vs Impact (Log)"),
+        ("7_concepts", "7. Concepts Analysis"),
+        ("8_concept_cooccurrence", "8. Concept Co-occurrence"),
+        ("11_team_size", "11. Team Size Analysis"),
+        ("12_correlation", "12. Correlation Matrix"),
+        ("13_cr_vs_oa", "13. CR vs OA Comparison"),
+        ("14_domain_citations", "14. Citations by Domain"),
+        ("15_cumulative_influence", "15. Cumulative Influence"),
+        ("16_references_impact", "16. References vs Impact"),
+        ("17_journal_impact", "17. Journal Impact"),
+        ("18_18_1_affiliation_network", "18.1 Affiliation Network (Top 20)"),
+        ("18_18_2_affiliation_network", "18.2 Affiliation Network (Top 30)"),
+        ("18_18_3_affiliation_network", "18.3 Affiliation Network (Top 50)"),
+        ("20_mds", "20. Multidimensional Scaling")
+    ]
+    
     # Инициализация состояния сессии
     if 'analyzer' not in st.session_state:
         st.session_state.analyzer = ScientificDataAnalyzer()
@@ -2114,10 +2137,10 @@ def main():
         with col1:
             # Скачать отдельные графики
             st.subheader("📸 Отдельные графики")
-            
+
             plot_options = {}
             for pid in st.session_state.analyzer.all_figures.keys():
-                for plot_id, name in all_plots:
+                for plot_id, name in ALL_PLOTS:  # Теперь используем ALL_PLOTS
                     if plot_id == pid:
                         plot_options[name] = pid
                         break
@@ -2188,4 +2211,5 @@ def main():
 if __name__ == "__main__":
 
     main()
+
 
