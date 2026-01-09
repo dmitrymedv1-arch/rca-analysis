@@ -2115,7 +2115,7 @@ def main():
             # Скачать отдельные графики
             st.subheader("📸 Отдельные графики")
             
-            plot_options = {next(name for pid, name in all_plots if pid == pid): pid 
+            plot_options = {next(name for plot_id, name in all_plots if plot_id == pid): pid 
                           for pid in st.session_state.analyzer.all_figures.keys()}
             
             selected_plot_name = st.selectbox("Выберите график", options=list(plot_options.keys()))
@@ -2182,4 +2182,5 @@ def main():
 
 # Запуск приложения
 if __name__ == "__main__":
+
     main()
