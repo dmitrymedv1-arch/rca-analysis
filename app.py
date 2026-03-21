@@ -658,7 +658,7 @@ class ScientificDataAnalyzer:
             return None
     
     def plot_6_collaboration_vs_citations_log(self):
-        """6. Зависимость цитирований от коллабораций (Логарифмическая шкала)"""
+        """6. Зависимость цитирований от коллабораций (логарифмическая шкала только для Y)"""
         try:
             required_cols = ['author count', 'num_affiliations', 'num_countries', 'max_citations']
             if not all(col in self.df_processed.columns for col in required_cols):
@@ -669,7 +669,7 @@ class ScientificDataAnalyzer:
                 return None
             
             fig, axes = plt.subplots(1, 3, figsize=(18, 6))
-            fig.suptitle('Collaboration Scale vs Citation Impact (Log-Log Scale)', 
+            fig.suptitle('Collaboration Scale vs Citation Impact (Log Y Scale)', 
                         fontweight='bold', fontsize=16)
             
             metrics = [
@@ -679,8 +679,8 @@ class ScientificDataAnalyzer:
             ]
             
             for idx, (metric, label, ax) in enumerate(metrics):
-                # Фильтруем данные > 0 для логарифмической шкалы
-                plot_data = valid_data[(valid_data[metric] > 0) & (valid_data['max_citations'] > 0)]
+                # Фильтруем данные > 0 для логарифмической шкалы по Y
+                plot_data = valid_data[valid_data['max_citations'] > 0].copy()
                 if len(plot_data) < 10:
                     continue
                 
@@ -693,21 +693,28 @@ class ScientificDataAnalyzer:
                                    edgecolors='black',
                                    linewidth=0.5)
                 
-                # Степенная регрессия (log-log)
+                # Экспоненциальная регрессия (log Y)
                 if len(plot_data) > 10:
-                    log_x = np.log(plot_data[metric].values)
+                    x = plot_data[metric].values
                     log_y = np.log(plot_data['max_citations'].values)
-                    slope, intercept, r_value, p_value, std_err = stats.linregress(log_x, log_y)
-                    x_line = np.linspace(plot_data[metric].min(), plot_data[metric].max(), 100)
-                    y_line = np.exp(intercept) * (x_line ** slope)
-                    ax.plot(x_line, y_line, 'r--', linewidth=2, 
-                           label=f'power law: y ∝ x^{slope:.2f}, r = {r_value:.3f}')
+                    
+                    # Убираем бесконечные значения
+                    mask = np.isfinite(log_y)
+                    if mask.sum() > 10:
+                        slope, intercept, r_value, p_value, std_err = stats.linregress(x[mask], log_y[mask])
+                        x_line = np.linspace(x[mask].min(), x[mask].max(), 100)
+                        y_line = np.exp(intercept + slope * x_line)
+                        ax.plot(x_line, y_line, 'r--', linewidth=2, 
+                               label=f'exponential: y ∝ exp({slope:.3f}x), r = {r_value:.3f}')
                 
-                ax.set_xscale('log')
-                ax.set_yscale('log')
                 ax.set_xlabel(label, fontweight='bold')
-                ax.set_ylabel('Maximum Citations (max(CR, OA))', fontweight='bold')
-                ax.set_title(f'{label} vs Citations (Log-Log)', fontweight='bold')
+                ax.set_ylabel('Maximum Citations (max(CR, OA)) - Log Scale', fontweight='bold')
+                ax.set_title(f'{label} vs Citations (Log Y Scale)', fontweight='bold')
+                
+                # Устанавливаем логарифмическую шкалу только для оси Y
+                ax.set_yscale('log')
+                # Ось X остается линейной
+                
                 ax.legend(loc='upper left', fontsize=8)
                 ax.grid(True, alpha=0.3, which='both')
                 
@@ -2160,7 +2167,7 @@ class ScientificDataAnalyzer:
             ("3_internationality", "3. Internationality vs Citations", self.plot_3_internationality_vs_citations),
             ("4_journal_heatmap", "4. Journal-Year Heatmap", lambda: self.plot_4_journal_year_heatmap(15)),
             ("5_collab_linear", "5. Collaboration vs Citations (Linear)", self.plot_5_collaboration_vs_citations_linear),
-            ("6_collab_log", "6. Collaboration vs Citations (Log-Log)", self.plot_6_collaboration_vs_citations_log),
+            ("6_collab_log", "6. Collaboration vs Citations (Log Y Scale)", self.plot_6_collaboration_vs_citations_log),
             ("6_1_bubble_chart", "6.1 References vs Impact (Linear)", self.plot_6_1_bubble_chart),
             ("6_2_bubble_chart", "6.2 References vs Impact (Log)", self.plot_6_2_bubble_chart),
             ("7_concepts", "7. Concepts Analysis", lambda: self.plot_7_concepts_analysis(30)),
@@ -2436,7 +2443,7 @@ def main():
         ("3_internationality", "3. Internationality vs Citations"),
         ("4_journal_heatmap", "4. Journal-Year Heatmap"),
         ("5_collab_linear", "5. Collaboration vs Citations (Linear)"),
-        ("6_collab_log", "6. Collaboration vs Citations (Log-Log)"),
+        ("6_collab_log", "6. Collaboration vs Citations (Log Y Scale)"),
         ("6_1_bubble_chart", "6.1 References vs Impact (Linear)"),
         ("6_2_bubble_chart", "6.2 References vs Impact (Log)"),
         ("7_concepts", "7. Concepts Analysis"),
