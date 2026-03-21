@@ -660,11 +660,11 @@ class ScientificDataAnalyzer:
     def plot_6_collaboration_vs_citations_log(self):
         """6. Зависимость цитирований от коллабораций (логарифмическая шкала только для Y)"""
         try:
-            required_cols = ['author count', 'num_affiliations', 'num_countries', 'max_citations']
-            if not all(col in self.df_processed.columns for col in required_cols):
+            required_cols = ['author count', 'num_affiliations', 'num_countries', 'max_citations', 'doi']
+            if not all(col in self.df_processed.columns for col in required_cols[:4]):
                 return None
             
-            valid_data = self.df_processed.dropna(subset=required_cols)
+            valid_data = self.df_processed.dropna(subset=required_cols[:4])
             if len(valid_data) < 10:
                 return None
             
@@ -684,28 +684,65 @@ class ScientificDataAnalyzer:
                 if len(plot_data) < 10:
                     continue
                 
-                scatter = ax.scatter(plot_data[metric],
-                                   plot_data['max_citations'],
-                                   c=plot_data['num_countries'] if metric != 'num_countries' else plot_data['author count'],
-                                   s=plot_data['author count'] * 10,
-                                   alpha=0.6,
-                                   cmap='viridis',
-                                   edgecolors='black',
-                                   linewidth=0.5)
+                # Округляем до целых для дискретных значений
+                plot_data[metric] = plot_data[metric].round().astype(int)
                 
-                # Экспоненциальная регрессия (log Y)
-                if len(plot_data) > 10:
-                    x = plot_data[metric].values
-                    log_y = np.log(plot_data['max_citations'].values)
+                # Группируем по значению метрики для расчета статистики
+                grouped_stats = plot_data.groupby(metric).agg({
+                    'max_citations': ['median', 'mean', 'std', 'count', 'min', 'max'],
+                    'author count': 'mean'
+                }).round(2)
+                
+                grouped_stats.columns = ['median_citations', 'mean_citations', 'std_citations',
+                                        'num_papers', 'min_citations', 'max_citations',
+                                        'mean_authors']
+                
+                # Сортируем по значению метрики
+                grouped_stats = grouped_stats.sort_index()
+                
+                # Фильтруем группы с достаточным количеством статей
+                grouped_stats = grouped_stats[grouped_stats['num_papers'] >= 2]
+                
+                if len(grouped_stats) < 3:
+                    continue
+                
+                # Создаем scatter plot с размерами пузырьков = количество статей
+                scatter = ax.scatter(grouped_stats.index,
+                                   grouped_stats['median_citations'],
+                                   s=grouped_stats['num_papers'] * 20,  # Размер пропорционален числу статей
+                                   c=grouped_stats['mean_authors'] if metric != 'author count' else grouped_stats['num_papers'],
+                                   cmap='plasma',
+                                   alpha=0.7,
+                                   edgecolors='black',
+                                   linewidth=1.0)
+                
+                # Добавляем error bars (медиана с IQR или стандартное отклонение)
+                yerr_lower = grouped_stats['median_citations'] - grouped_stats['min_citations']
+                yerr_upper = grouped_stats['max_citations'] - grouped_stats['median_citations']
+                yerr = [yerr_lower, yerr_upper]
+                
+                ax.errorbar(grouped_stats.index, 
+                           grouped_stats['median_citations'],
+                           yerr=yerr,
+                           fmt='none', 
+                           ecolor='gray', 
+                           alpha=0.3,
+                           capsize=3)
+                
+                # Экспоненциальная регрессия для медианных значений
+                if len(grouped_stats) > 3:
+                    x = grouped_stats.index.values
+                    y = grouped_stats['median_citations'].values
+                    log_y = np.log(y)
                     
                     # Убираем бесконечные значения
                     mask = np.isfinite(log_y)
-                    if mask.sum() > 10:
+                    if mask.sum() > 3:
                         slope, intercept, r_value, p_value, std_err = stats.linregress(x[mask], log_y[mask])
                         x_line = np.linspace(x[mask].min(), x[mask].max(), 100)
                         y_line = np.exp(intercept + slope * x_line)
                         ax.plot(x_line, y_line, 'r--', linewidth=2, 
-                               label=f'exponential: y ∝ exp({slope:.3f}x), r = {r_value:.3f}')
+                               label=f'exp fit: y ∝ exp({slope:.3f}x)\nr = {r_value:.3f}, p = {p_value:.3f}')
                 
                 ax.set_xlabel(label, fontweight='bold')
                 ax.set_ylabel('Maximum Citations (max(CR, OA)) - Log Scale', fontweight='bold')
@@ -713,18 +750,48 @@ class ScientificDataAnalyzer:
                 
                 # Устанавливаем логарифмическую шкалу только для оси Y
                 ax.set_yscale('log')
-                # Ось X остается линейной
+                # Ось X остается линейной с целыми значениями
+                ax.xaxis.set_major_locator(plt.MaxNLocator(integer=True))
                 
                 ax.legend(loc='upper left', fontsize=8)
                 ax.grid(True, alpha=0.3, which='both')
                 
-                if idx < 2:
-                    cbar = plt.colorbar(scatter, ax=ax)
-                    cbar_label = 'Number of Countries' if metric != 'num_countries' else 'Number of Authors'
-                    cbar.set_label(cbar_label, fontweight='bold')
+                # Добавляем цветовую шкалу
+                cbar = plt.colorbar(scatter, ax=ax)
+                if metric != 'author count':
+                    cbar.set_label('Mean Number of Authors', fontweight='bold', fontsize=10)
+                else:
+                    cbar.set_label('Number of Papers in Group', fontweight='bold', fontsize=10)
+                
+                # Добавляем легенду для размера пузырьков
+                from matplotlib.lines import Line2D
+                legend_elements = []
+                sizes_to_show = [5, 10, 25, 50]
+                for size_val in sizes_to_show:
+                    if size_val <= grouped_stats['num_papers'].max():
+                        legend_elements.append(Line2D([0], [0], marker='o', color='w',
+                                                     markerfacecolor='gray', markersize=np.sqrt(size_val * 20 / 5),
+                                                     label=f'{size_val} papers'))
+                
+                if legend_elements:
+                    ax.legend(handles=legend_elements, title='Bubble size = Number of papers',
+                             loc='lower right', fontsize=8, title_fontsize=9)
+                
+                # Добавляем аннотации для самых больших групп
+                top_groups = grouped_stats.nlargest(3, 'num_papers')
+                for val in top_groups.index:
+                    median_val = grouped_stats.loc[val, 'median_citations']
+                    ax.annotate(f'n={int(grouped_stats.loc[val, "num_papers"])}',
+                               xy=(val, median_val),
+                               xytext=(5, 5), textcoords='offset points',
+                               fontsize=8, alpha=0.7,
+                               bbox=dict(boxstyle='round,pad=0.2', facecolor='white', alpha=0.7))
             
             # Сохраняем данные
-            self.plot_data['6_collaboration_vs_citations_log'] = valid_data[required_cols].to_dict('records')
+            self.plot_data['6_collaboration_vs_citations_log'] = {
+                'summary': 'Aggregated statistics for collaboration metrics',
+                'data': valid_data[required_cols[:4]].to_dict('records')
+            }
             
             plt.tight_layout()
             return fig
