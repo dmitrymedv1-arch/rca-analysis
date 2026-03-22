@@ -1971,14 +1971,16 @@ class ScientificDataAnalyzer:
                 'total_weight': sum([l['value'] for l in links])
             }
             
-            # Создаем диаграмму Санки с plotly (лучше для интерактивности)
+            # Создаем диаграмму Санки с plotly
             fig = go.Figure(data=[go.Sankey(
                 node=dict(
                     pad=15,
                     thickness=20,
-                    line=dict(color="black", width=0.5),
+                    line=dict(color="rgba(0,0,0,0)", width=0),  # Убираем обводку (полностью прозрачная)
                     label=nodes,
-                    color="blue"
+                    color="blue",
+                    # Настройки для текста внутри узлов
+                    hovertemplate='%{label}<br>Value: %{value}<extra></extra>'
                 ),
                 link=dict(
                     source=[l['source'] for l in links],
@@ -1989,9 +1991,25 @@ class ScientificDataAnalyzer:
             
             fig.update_layout(
                 title_text="Hierarchical Knowledge Structure: Domain → Field → Subfield → Topic",
-                font_size=10,
+                font_size=12,  # Увеличиваем размер шрифта для лучшей читаемости
                 width=1200,
-                height=800
+                height=800,
+                # Настройки для текста
+                font=dict(
+                    family="Arial, sans-serif",
+                    size=12,
+                    color="black"  # Черный цвет текста
+                )
+            )
+            
+            # Дополнительные настройки для текста узлов
+            fig.update_traces(
+                textfont=dict(
+                    family="Arial, sans-serif",
+                    size=11,
+                    color="black"  # Черный цвет текста в узлах
+                ),
+                selector=dict(type='sankey')
             )
             
             return fig
