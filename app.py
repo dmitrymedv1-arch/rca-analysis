@@ -439,8 +439,8 @@ class ScientificDataAnalyzer:
             
             # Ребра
             if H.edges():
-                edge_weights = [H[u][v]['weight'] * 0.1 for u, v in H.edges()]
-                edges = nx.draw_networkx_edges(H, pos, width=edge_weights, alpha=0.5,
+                edge_weights = [H[u][v]['weight'] * 0.3 for u, v in H.edges()]
+                edges = nx.draw_networkx_edges(H, pos, width=edge_weights, alpha=0.7,
                                               edge_color='gray', style='solid', ax=ax)
             
             # Подписи
