@@ -1,6 +1,9 @@
 # -*- coding: utf-8 -*-
-"""Scientific Data Visualization Dashboard - Streamlit Version"""
- 
+"""
+Scientific Data Visualization Dashboard - Streamlit Version
+Advanced Multi-Stage Scientific Data Analysis and Visualization Tool
+"""
+
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -30,79 +33,280 @@ from wordcloud import WordCloud
 from streamlit_option_menu import option_menu
 import tempfile
 import time
+import matplotlib.patches as mpatches
+from matplotlib.lines import Line2D
 
-# Настройка страницы Streamlit
-st.set_page_config(
-    page_title="Scientific Data Visualization Dashboard",
-    page_icon="📊",
-    layout="wide",
-    initial_sidebar_state="expanded"
-)
-
-# Настройка стиля для научных графиков
-def set_scientific_style():
-    """Установка научного стиля для графиков"""
-    plt.rcParams.update({
-        'font.family': 'sans-serif',
-        'font.sans-serif': ['DejaVu Sans', 'Liberation Sans', 'Arial', 'Helvetica'],
-        'font.size': 11,
-        'axes.titlesize': 14,
-        'axes.labelsize': 12,
-        'axes.labelweight': 'bold',
-        'axes.titleweight': 'bold',
-        'axes.edgecolor': 'black',
-        'axes.linewidth': 1.5,
-        'axes.grid': True,
-        'grid.alpha': 0.2,
-        'grid.linestyle': '--',
-        'xtick.labelsize': 10,
-        'ytick.labelsize': 10,
-        'legend.fontsize': 10,
-        'legend.title_fontsize': 11,
-        'legend.frameon': True,
-        'legend.edgecolor': 'black',
-        'legend.framealpha': 0.95,
-        'legend.fancybox': False,
-        'figure.titlesize': 16,
-        'figure.titleweight': 'bold',
-        'figure.dpi': 150,
-        'figure.facecolor': 'white',
-        'axes.facecolor': 'white',
-        'savefig.dpi': 300,
-        'savefig.facecolor': 'white',
-        'savefig.edgecolor': 'black',
-        'savefig.bbox': 'tight',
-    })
-    
-    # Цветовая палитра для научных графиков
-    scientific_palette = [
-        '#2E86AB', '#C73E1D', '#F18F01', '#6B8E23', '#8B5FBF',
-        '#00A896', '#FF6B6B', '#4ECDC4', '#FFD166', '#06D6A0',
-        '#118AB2', '#EF476F', '#073B4C', '#7209B7', '#F72585'
-    ]
-    
-    plt.rcParams['axes.prop_cycle'] = mpl.cycler(color=scientific_palette)
-
-set_scientific_style()
+# Suppress warnings
+warnings.filterwarnings('ignore')
 
 # ============================================================================
-# КЛАСС ДЛЯ ОБРАБОТКИ И ВИЗУАЛИЗАЦИИ ДАННЫХ
+# CUSTOM CSS FOR MODERN DESIGN
+# ============================================================================
+
+def load_custom_css():
+    """Load custom CSS for modern Streamlit design"""
+    st.markdown("""
+    <style>
+    /* Main container styling */
+    .main-header {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        padding: 1rem;
+        border-radius: 10px;
+        margin-bottom: 2rem;
+        text-align: center;
+    }
+    
+    .main-header h1 {
+        color: white;
+        font-size: 2.5rem;
+        font-weight: bold;
+        margin: 0;
+    }
+    
+    .main-header p {
+        color: rgba(255,255,255,0.9);
+        font-size: 1.1rem;
+        margin-top: 0.5rem;
+    }
+    
+    /* Card styling */
+    .custom-card {
+        background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+        border-radius: 15px;
+        padding: 1.5rem;
+        margin-bottom: 1rem;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        transition: transform 0.3s ease;
+    }
+    
+    .custom-card:hover {
+        transform: translateY(-5px);
+        box-shadow: 0 6px 12px rgba(0,0,0,0.15);
+    }
+    
+    /* Metric cards */
+    .metric-card {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        border-radius: 10px;
+        padding: 1rem;
+        text-align: center;
+        color: white;
+        margin: 0.5rem;
+    }
+    
+    .metric-card h3 {
+        font-size: 0.9rem;
+        margin: 0;
+        opacity: 0.9;
+    }
+    
+    .metric-card .value {
+        font-size: 2rem;
+        font-weight: bold;
+        margin: 0.5rem 0;
+    }
+    
+    /* Button styling */
+    .stButton > button {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        border: none;
+        border-radius: 8px;
+        padding: 0.5rem 1rem;
+        font-weight: bold;
+        transition: all 0.3s ease;
+    }
+    
+    .stButton > button:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+    }
+    
+    /* Progress bar styling */
+    .stProgress > div > div {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    }
+    
+    /* Expander styling */
+    .streamlit-expanderHeader {
+        background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+        border-radius: 10px;
+        font-weight: bold;
+    }
+    
+    /* Sidebar styling */
+    .css-1d391kg {
+        background: linear-gradient(180deg, #f5f7fa 0%, #e9ecef 100%);
+    }
+    
+    /* Tab styling */
+    .stTabs [data-baseweb="tab-list"] {
+        gap: 1rem;
+    }
+    
+    .stTabs [data-baseweb="tab"] {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        border-radius: 8px;
+        padding: 0.5rem 1rem;
+        font-weight: bold;
+    }
+    
+    .stTabs [aria-selected="true"] {
+        background: linear-gradient(135deg, #764ba2 0%, #667eea 100%);
+    }
+    
+    /* Success message */
+    .stAlert {
+        border-radius: 10px;
+        border-left: 4px solid #28a745;
+    }
+    
+    /* Info message */
+    .stAlert.info {
+        border-left-color: #17a2b8;
+    }
+    
+    /* Warning message */
+    .stAlert.warning {
+        border-left-color: #ffc107;
+    }
+    
+    /* Error message */
+    .stAlert.error {
+        border-left-color: #dc3545;
+    }
+    
+    /* Custom divider */
+    .custom-divider {
+        height: 3px;
+        background: linear-gradient(90deg, #667eea, #764ba2, #667eea);
+        margin: 1rem 0;
+        border-radius: 3px;
+    }
+    
+    /* Footer */
+    .footer {
+        text-align: center;
+        padding: 2rem;
+        margin-top: 3rem;
+        background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+        border-radius: 10px;
+        font-size: 0.9rem;
+        color: #666;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+
+# ============================================================================
+# SCIENTIFIC PLOTTING STYLE CONFIGURATION
+# ============================================================================
+
+def set_scientific_style(fig_size=(12, 9), dpi=600):
+    """Set scientific plotting style with specified dimensions"""
+    plt.style.use('default')
+    plt.rcParams.update({
+        # Font sizes and weights
+        'font.size': 10,
+        'font.family': 'serif',
+        'font.serif': ['Times New Roman', 'DejaVu Serif', 'Liberation Serif'],
+        'axes.labelsize': 11,
+        'axes.labelweight': 'bold',
+        'axes.titlesize': 12,
+        'axes.titleweight': 'bold',
+        
+        # Axes appearance
+        'axes.facecolor': 'white',
+        'axes.edgecolor': 'black',
+        'axes.linewidth': 1.0,
+        'axes.grid': False,
+        
+        # Tick parameters
+        'xtick.color': 'black',
+        'ytick.color': 'black',
+        'xtick.labelsize': 10,
+        'ytick.labelsize': 10,
+        'xtick.direction': 'out',
+        'ytick.direction': 'out',
+        'xtick.major.size': 4,
+        'xtick.minor.size': 2,
+        'ytick.major.size': 4,
+        'ytick.minor.size': 2,
+        'xtick.major.width': 0.8,
+        'ytick.major.width': 0.8,
+        
+        # Legend
+        'legend.fontsize': 10,
+        'legend.frameon': True,
+        'legend.framealpha': 0.9,
+        'legend.edgecolor': 'black',
+        'legend.fancybox': False,
+        
+        # Figure
+        'figure.dpi': dpi,
+        'figure.figsize': fig_size,
+        'savefig.dpi': dpi,
+        'savefig.bbox': 'tight',
+        'savefig.pad_inches': 0.1,
+        'figure.facecolor': 'white',
+        
+        # Lines
+        'lines.linewidth': 1.5,
+        'lines.markersize': 6,
+        'errorbar.capsize': 3,
+    })
+
+# Color palette options for different plot types
+COLOR_PALETTES = {
+    'heatmap': [
+        'Blues', 'Reds', 'Greens', 'Purples', 'Oranges',
+        'viridis', 'plasma', 'inferno', 'magma', 'cividis',
+        'coolwarm', 'RdYlGn', 'RdYlBu', 'Spectral', 'PiYG'
+    ],
+    'scatter': [
+        'viridis', 'plasma', 'inferno', 'magma', 'cividis',
+        'coolwarm', 'rainbow', 'jet', 'hsv', 'twilight'
+    ],
+    'bar': [
+        'Blues', 'Reds', 'Greens', 'Purples', 'Oranges',
+        'Set1', 'Set2', 'Set3', 'Paired', 'Dark2'
+    ],
+    'network': [
+        'Blues', 'Reds', 'Greens', 'Purples', 'Oranges',
+        'viridis', 'plasma', 'inferno', 'magma', 'cividis'
+    ],
+    'sequential': [
+        'Blues', 'Greens', 'Reds', 'Purples', 'Oranges',
+        'Greys', 'YlOrBr', 'YlOrRd', 'OrRd', 'PuRd'
+    ]
+}
+
+# ============================================================================
+# CLASS FOR DATA ANALYSIS AND VISUALIZATION
 # ============================================================================
 
 class ScientificDataAnalyzer:
-    """Класс для анализа и визуализации научных данных"""
+    """Class for scientific data analysis and visualization"""
     
     def __init__(self):
         self.df = None
         self.df_processed = None
         self.all_figures = {}
-        self.plot_data = {}  # Хранит данные для каждого графика
+        self.plot_data = {}
         self.errors = []
         self.warnings = []
         self.progress = 0
+        self.plot_settings = {
+            'show_regression': True,
+            'heatmap_palette': 'Blues',
+            'scatter_palette': 'viridis',
+            'bar_palette': 'Blues',
+            'network_palette': 'Blues',
+            'sequential_palette': 'Blues'
+        }
         
     def log_error(self, error_msg, details=""):
-        """Логирование ошибки"""
+        """Log error message"""
         self.errors.append({
             'timestamp': datetime.now().isoformat(),
             'message': error_msg,
@@ -113,7 +317,7 @@ class ScientificDataAnalyzer:
             st.error(f"   Details: {details}")
     
     def log_warning(self, warning_msg):
-        """Логирование предупреждения"""
+        """Log warning message"""
         self.warnings.append({
             'timestamp': datetime.now().isoformat(),
             'message': warning_msg
@@ -121,49 +325,53 @@ class ScientificDataAnalyzer:
         st.warning(f"⚠️ WARNING: {warning_msg}")
     
     def update_progress(self, value):
-        """Обновление прогресса"""
+        """Update progress value"""
         self.progress = value
     
+    def update_plot_settings(self, settings):
+        """Update plot settings"""
+        self.plot_settings.update(settings)
+    
     def parse_data(self, data_text):
-        """Парсинг данных из текстового ввода с расширенной диагностикой"""
+        """Parse data from text input with extended diagnostics"""
         st.info("🔍 Parsing data...")
         
         try:
-            # Разбиваем текст на строки
+            # Split text into lines
             lines = data_text.strip().split('\n')
             if len(lines) < 2:
                 self.log_error("Not enough data rows", f"Found {len(lines)} lines")
                 return None
             
-            # Парсим заголовки
+            # Parse headers
             headers = lines[0].split('\t')
             st.info(f"   Found {len(headers)} columns")
             st.info(f"   Headers: {headers}")
             
-            # Проверяем необходимые колонки
+            # Check required columns
             required_columns = ['doi', 'Title', 'year', 'count']
             missing_columns = [col for col in required_columns if col not in headers]
             if missing_columns:
                 self.log_warning(f"Missing columns: {missing_columns}")
             
-            # Парсим данные
+            # Parse data
             data = []
             for i, line in enumerate(lines[1:]):
                 if line.strip():
                     values = line.split('\t')
-                    # Заполняем недостающие значения
+                    # Fill missing values
                     while len(values) < len(headers):
                         values.append('')
                     data.append(values)
             
-            # Создаем DataFrame
+            # Create DataFrame
             self.df = pd.DataFrame(data, columns=headers)
             st.success(f"✅ Successfully parsed {len(self.df)} rows")
             
-            # Диагностика данных
+            # Data diagnostics
             self._diagnose_data()
             
-            # Предобработка данных
+            # Preprocess data
             self.df_processed = self._preprocess_data(self.df)
             
             return self.df_processed
@@ -173,11 +381,11 @@ class ScientificDataAnalyzer:
             return None
     
     def _diagnose_data(self):
-        """Диагностика качества данных"""
+        """Diagnose data quality"""
         st.info("🔬 Data Diagnostics:")
         st.write("---")
         
-        # Проверка пропущенных значений
+        # Check missing values
         missing_counts = self.df.isnull().sum()
         total_cells = np.prod(self.df.shape)
         missing_percent = (missing_counts.sum() / total_cells) * 100
@@ -185,7 +393,7 @@ class ScientificDataAnalyzer:
         st.info(f"   Total cells: {total_cells:,}")
         st.info(f"   Missing values: {missing_counts.sum():,} ({missing_percent:.1f}%)")
         
-        # Топ колонок с пропусками
+        # Top columns with missing values
         top_missing = missing_counts[missing_counts > 0].sort_values(ascending=False).head(5)
         if len(top_missing) > 0:
             st.info("   Top columns with missing values:")
@@ -193,7 +401,7 @@ class ScientificDataAnalyzer:
                 percent = (count / len(self.df)) * 100
                 st.info(f"     - {col}: {count:,} ({percent:.1f}%)")
         
-        # Проверка числовых колонок
+        # Check numeric columns
         numeric_cols = ['author count', 'year', 'Citation counts (CR)', 'Citation counts (OA)',
                        'Annual cit counts (CR)', 'Annual cit counts (OA)', 'references_count', 'count']
         
@@ -208,7 +416,7 @@ class ScientificDataAnalyzer:
                 except:
                     self.log_warning(f"Cannot convert '{col}' to numeric")
         
-        # Статистика по ключевым колонкам
+        # Key statistics
         st.info("📊 Key Statistics:")
         if 'year' in self.df.columns:
             self.df['year'] = pd.to_numeric(self.df['year'], errors='coerce')
@@ -224,12 +432,12 @@ class ScientificDataAnalyzer:
         st.write("---")
     
     def _preprocess_data(self, df):
-        """Предобработка данных"""
+        """Preprocess data"""
         st.info("🔄 Preprocessing data...")
         
         df_processed = df.copy()
         
-        # Преобразование числовых колонок
+        # Convert numeric columns
         numeric_cols = ['author count', 'year', 'Citation counts (CR)', 'Citation counts (OA)',
                        'Annual cit counts (CR)', 'Annual cit counts (OA)', 'references_count', 'count']
         
@@ -237,14 +445,13 @@ class ScientificDataAnalyzer:
             if col in df_processed.columns:
                 df_processed[col] = pd.to_numeric(df_processed[col], errors='coerce')
         
-        # Обработка даты
+        # Process date
         if 'publication_date' in df_processed.columns:
             df_processed['publication_date'] = pd.to_datetime(df_processed['publication_date'], errors='coerce')
-            # Извлекаем год из даты, если year отсутствует
             if 'year' not in df_processed.columns or df_processed['year'].isnull().all():
                 df_processed['year'] = df_processed['publication_date'].dt.year
         
-        # Обработка списковых колонок
+        # Process list columns
         list_columns = {
             'countries {country 1; ... country last}': 'countries_list',
             'Concepts': 'concepts_list',
@@ -258,22 +465,21 @@ class ScientificDataAnalyzer:
                     lambda x: [item.strip() for item in str(x).split(';') if item.strip()]
                 )
         
-        # Расчет дополнительных метрик
+        # Calculate additional metrics
         current_year = datetime.now().year
         if 'year' in df_processed.columns:
             df_processed['article_age'] = current_year - df_processed['year']
             df_processed['article_age'] = df_processed['article_age'].clip(lower=1)
             
-            # Нормированное внимание
             if 'count' in df_processed.columns:
                 df_processed['normalized_attention'] = df_processed['count'] / df_processed['article_age']
         
-        # Расчет максимальных цитирований между CR и OA
+        # Calculate maximum citations between CR and OA
         if 'Citation counts (CR)' in df_processed.columns and 'Citation counts (OA)' in df_processed.columns:
             df_processed['max_citations'] = df_processed[['Citation counts (CR)', 'Citation counts (OA)']].max(axis=1)
             df_processed['max_annual_citations'] = df_processed[['Annual cit counts (CR)', 'Annual cit counts (OA)']].max(axis=1)
         
-        # Количество стран и аффилиаций
+        # Count countries and affiliations
         if 'countries_list' in df_processed.columns:
             df_processed['num_countries'] = df_processed['countries_list'].apply(len)
         
@@ -284,11 +490,11 @@ class ScientificDataAnalyzer:
         return df_processed
     
     # ============================================================================
-    # ФУНКЦИИ ДЛЯ ПОСТРОЕНИЯ ГРАФИКОВ (23 ВИДА)
+    # PLOT FUNCTIONS (All plots with scientific style and enhanced legends)
     # ============================================================================
     
     def plot_1_distribution_attention(self):
-        """1. Распределение внимания (лог-лог, CCDF, Лоренц)"""
+        """1. Distribution of attention (log-log, CCDF, Lorenz)"""
         try:
             if 'count' not in self.df_processed.columns:
                 return None
@@ -300,10 +506,10 @@ class ScientificDataAnalyzer:
                 self.log_warning("Insufficient data for distribution plot")
                 return None
             
-            fig, axes = plt.subplots(1, 3, figsize=(18, 5))
-            fig.suptitle('Distribution of Research Attention', fontweight='bold', fontsize=16)
+            fig, axes = plt.subplots(1, 3, figsize=(12, 9), dpi=600)
+            fig.suptitle('Distribution of Research Attention', fontweight='bold', fontsize=14)
             
-            # A: Log-log гистограмма
+            # A: Log-log histogram
             axes[0].hist(counts, bins=np.logspace(np.log10(1), np.log10(max(100, counts.max())), 30),
                         edgecolor='black', alpha=0.7, color='#2E86AB')
             axes[0].set_xscale('log')
@@ -313,7 +519,7 @@ class ScientificDataAnalyzer:
             axes[0].set_title('A. Log-Log Distribution', fontweight='bold')
             axes[0].grid(True, alpha=0.3)
             
-            # Сохраняем данные
+            # Save data
             self.plot_data['1_distribution'] = {
                 'counts': counts.tolist(),
                 'log_bins': np.logspace(np.log10(1), np.log10(max(100, counts.max())), 30).tolist()
@@ -329,7 +535,7 @@ class ScientificDataAnalyzer:
             axes[1].set_title('B. Complementary CDF', fontweight='bold')
             axes[1].grid(True, alpha=0.3)
             
-            # C: Кривая Лоренца
+            # C: Lorenz curve
             sorted_counts = np.sort(counts)
             cumulative_counts = np.cumsum(sorted_counts)
             cumulative_percent = cumulative_counts / cumulative_counts[-1]
@@ -340,7 +546,7 @@ class ScientificDataAnalyzer:
             axes[2].plot([0, 1], [0, 1], 'k--', alpha=0.5, linewidth=1.5, label='Perfect equality')
             axes[2].fill_between(population_percent, 0, cumulative_percent, alpha=0.2, color='#6B8E23')
             
-            # Расчет индекса Джини
+            # Calculate Gini index
             gini = 0
             for i in range(1, len(population_percent)):
                 gini += (population_percent[i] - population_percent[i-1]) * \
@@ -348,13 +554,13 @@ class ScientificDataAnalyzer:
             gini = 1 - gini
             
             axes[2].text(0.7, 0.3, f'Gini Index = {gini:.3f}',
-                        fontsize=11, fontweight='bold',
+                        fontsize=10, fontweight='bold',
                         bbox=dict(boxstyle="round,pad=0.3", facecolor='white', alpha=0.9))
             
             axes[2].set_xlabel('Cumulative Proportion of Papers', fontweight='bold')
             axes[2].set_ylabel('Cumulative Proportion of Mentions', fontweight='bold')
-            axes[2].set_title(f'C. Lorenz Curve', fontweight='bold')
-            axes[2].legend(loc='upper left')
+            axes[2].set_title('C. Lorenz Curve', fontweight='bold')
+            axes[2].legend(loc='upper left', fontsize=9)
             axes[2].grid(True, alpha=0.3)
             
             plt.tight_layout()
@@ -365,12 +571,12 @@ class ScientificDataAnalyzer:
             return None
     
     def plot_2_country_collaboration_network(self):
-        """2. Сеть коллабораций между странами"""
+        """2. Country collaboration network"""
         try:
             if 'countries_list' not in self.df_processed.columns:
                 return None
             
-            # Создаем граф
+            # Create graph
             G = nx.Graph()
             country_pairs = []
             
@@ -379,14 +585,14 @@ class ScientificDataAnalyzer:
                     countries = [c.strip().upper() for c in row['countries_list']]
                     weight = row.get('count', 1)
                     
-                    # Добавляем узлы
+                    # Add nodes
                     for country in countries:
                         if not G.has_node(country):
                             G.add_node(country, weight=0, papers=0)
                         G.nodes[country]['weight'] += weight
                         G.nodes[country]['papers'] += 1
                     
-                    # Добавляем ребра между всеми парами
+                    # Add edges between all pairs
                     for i in range(len(countries)):
                         for j in range(i+1, len(countries)):
                             if G.has_edge(countries[i], countries[j]):
@@ -406,7 +612,7 @@ class ScientificDataAnalyzer:
                 self.log_warning("Insufficient data for country network")
                 return None
             
-            # Сохраняем данные
+            # Save data
             self.plot_data['2_country_network'] = {
                 'nodes': [{'country': node, 'weight': G.nodes[node]['weight'], 
                           'papers': G.nodes[node]['papers']} for node in G.nodes()],
@@ -414,10 +620,10 @@ class ScientificDataAnalyzer:
                           'papers': G[u][v]['papers']} for u, v in G.edges()]
             }
             
-            # Визуализация
-            fig, ax = plt.subplots(figsize=(14, 10))
+            # Visualization
+            fig, ax = plt.subplots(figsize=(12, 9), dpi=600)
             
-            # Фильтруем слабые связи
+            # Filter weak connections
             min_weight = np.percentile([d['weight'] for u, v, d in G.edges(data=True)], 50)
             edges_to_keep = [(u, v) for u, v, d in G.edges(data=True) if d['weight'] >= min_weight]
             H = G.edge_subgraph([u for u, v in edges_to_keep] + [v for u, v in edges_to_keep])
@@ -425,42 +631,54 @@ class ScientificDataAnalyzer:
             if len(H.nodes()) == 0:
                 H = G
             
-            # Позиционирование
+            # Positioning
             pos = nx.spring_layout(H, k=2, seed=42)
             
-            # Размер узлов по весу
+            # Node sizes by weight
             node_sizes = [H.nodes[n]['weight'] * 0.5 + 500 for n in H.nodes()]
             node_colors = [H.nodes[n]['papers'] for n in H.nodes()]
             
-            # Рисуем граф с градиентной цветовой схемой (от светлого к темному)
+            # Draw graph
             nodes = nx.draw_networkx_nodes(H, pos, node_size=node_sizes,
-                                          node_color=node_colors, cmap='Blues',
+                                          node_color=node_colors, cmap=self.plot_settings['network_palette'],
                                           alpha=0.8, edgecolors='black', linewidths=1.5, ax=ax)
             
-            # Ребра
+            # Edges
             if H.edges():
                 edge_weights = [H[u][v]['weight'] * 0.1 for u, v in H.edges()]
                 edges = nx.draw_networkx_edges(H, pos, width=edge_weights, alpha=0.5,
                                               edge_color='gray', style='solid', ax=ax)
             
-            # Подписи
-            nx.draw_networkx_labels(H, pos, font_size=10, font_weight='bold', ax=ax)
+            # Labels
+            nx.draw_networkx_labels(H, pos, font_size=9, font_weight='bold', ax=ax)
             
-            ax.set_title('Country Collaboration Network', fontweight='bold', fontsize=16, pad=20)
+            ax.set_title('Country Collaboration Network', fontweight='bold', fontsize=14, pad=20)
             ax.axis('off')
             
-            # Цветовая шкала
-            sm = plt.cm.ScalarMappable(cmap='Blues',
+            # Colorbar
+            sm = plt.cm.ScalarMappable(cmap=self.plot_settings['network_palette'],
                                       norm=plt.Normalize(vmin=min(node_colors), 
                                                        vmax=max(node_colors)))
             sm.set_array([])
             cbar = plt.colorbar(sm, ax=ax, shrink=0.8, pad=0.02)
-            cbar.set_label('Number of Papers', fontweight='bold', fontsize=10)
+            cbar.set_label('Number of Papers', fontweight='bold', fontsize=9)
             
-            # Статистика
+            # Statistics
             stats_text = f"Nodes: {len(G.nodes())} | Edges: {len(G.edges())}"
-            ax.text(0.02, 0.02, stats_text, transform=ax.transAxes, fontsize=10,
+            ax.text(0.02, 0.02, stats_text, transform=ax.transAxes, fontsize=9,
                    bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
+            
+            # Legend for node sizes
+            size_legend_elements = []
+            size_values = [500, 1000, 1500, 2000]
+            for size in size_values:
+                size_legend_elements.append(Line2D([0], [0], marker='o', color='w',
+                                                  markerfacecolor='gray',
+                                                  markersize=np.sqrt(size/10),
+                                                  label=f'Weight ~{int(size/0.5-500):.0f}'))
+            if size_legend_elements:
+                ax.legend(handles=size_legend_elements, title='Node Weight',
+                         loc='upper right', fontsize=8, title_fontsize=9)
             
             plt.tight_layout()
             return fig
@@ -470,7 +688,7 @@ class ScientificDataAnalyzer:
             return None
     
     def plot_3_internationality_vs_citations(self):
-        """3. Международность vs Цитируемость"""
+        """3. Internationality vs Citations"""
         try:
             required_cols = ['num_countries', 'Citation counts (CR)', 'author count']
             if not all(col in self.df_processed.columns for col in required_cols):
@@ -480,38 +698,52 @@ class ScientificDataAnalyzer:
             if len(valid_data) < 10:
                 return None
             
-            fig, ax = plt.subplots(figsize=(12, 8))
+            fig, ax = plt.subplots(figsize=(12, 9), dpi=600)
             
             scatter = ax.scatter(valid_data['num_countries'],
                                valid_data['Citation counts (CR)'],
                                c=valid_data.get('Annual cit counts (CR)', 1),
                                s=valid_data['author count'] * 20,
                                alpha=0.7,
-                               cmap='viridis',
+                               cmap=self.plot_settings['scatter_palette'],
                                edgecolors='black',
                                linewidth=0.5)
+            
+            # Regression line if enabled
+            if self.plot_settings['show_regression'] and len(valid_data) > 10:
+                x = valid_data['num_countries'].values
+                y = valid_data['Citation counts (CR)'].values
+                mask = ~(np.isnan(x) | np.isnan(y))
+                if mask.sum() > 10:
+                    slope, intercept, r_value, p_value, std_err = stats.linregress(x[mask], y[mask])
+                    x_line = np.linspace(x[mask].min(), x[mask].max(), 100)
+                    y_line = intercept + slope * x_line
+                    ax.plot(x_line, y_line, 'r--', linewidth=2, 
+                           label=f'Regression: r = {r_value:.3f}, p = {p_value:.3f}')
+                    ax.legend(loc='upper left', fontsize=9)
             
             ax.set_xlabel('Number of Collaborating Countries', fontweight='bold')
             ax.set_ylabel('Total Citations (CR)', fontweight='bold')
             ax.set_title('International Collaboration vs Citation Impact',
-                        fontweight='bold', fontsize=16)
+                        fontweight='bold', fontsize=14)
             
             cbar = plt.colorbar(scatter, ax=ax)
             cbar.set_label('Annual Citation Rate (CR)', fontweight='bold')
             
-            # Легенда для размера точек
+            # Legend for bubble sizes
+            size_legend_elements = []
             sizes = [5, 10, 15]
             labels = ['5 authors', '10 authors', '15 authors']
-            legend_elements = []
             for size, label in zip(sizes, labels):
-                legend_elements.append(plt.scatter([], [], s=size*20, c='gray',
-                                                  alpha=0.7, edgecolors='black',
-                                                  label=label))
+                size_legend_elements.append(plt.scatter([], [], s=size*20, c='gray',
+                                                       alpha=0.7, edgecolors='black',
+                                                       label=label))
+            ax.legend(handles=size_legend_elements, loc='upper left', 
+                     title='Team Size', fontsize=8, title_fontsize=9)
             
-            ax.legend(handles=legend_elements, loc='upper left', title='Team Size')
             ax.grid(True, alpha=0.3)
             
-            # Сохраняем данные
+            # Save data
             self.plot_data['3_internationality_vs_citations'] = valid_data[required_cols].to_dict('records')
             
             plt.tight_layout()
@@ -520,15 +752,15 @@ class ScientificDataAnalyzer:
         except Exception as e:
             self.log_error(f"Error in plot_3_internationality_vs_citations: {str(e)}")
             return None
-            
+    
     def plot_4_journal_year_heatmap(self, top_journals=15):
-        """4. Тепловая карта: Журнал vs Год"""
+        """4. Heatmap: Journal vs Year"""
         try:
             required_cols = ['Full journal Name', 'year', 'Annual cit counts (CR)']
             if not all(col in self.df_processed.columns for col in required_cols):
                 return None
             
-            # Выбираем топ журналов
+            # Select top journals
             journal_counts = self.df_processed['Full journal Name'].value_counts()
             top_journals_list = journal_counts.head(top_journals).index.tolist()
             
@@ -544,7 +776,7 @@ class ScientificDataAnalyzer:
                 fill_value=0
             ).sort_index()
             
-            # Фильтруем годы, где все значения = 0
+            # Filter years with all zeros
             row_sums = pivot_table.sum(axis=1)
             pivot_table = pivot_table[row_sums > 0]
             
@@ -552,23 +784,24 @@ class ScientificDataAnalyzer:
                 self.log_warning("Insufficient years with data for heatmap")
                 return None
             
-            # Сохраняем данные
+            # Save data
             self.plot_data['4_journal_year_heatmap'] = {
                 'pivot_data': pivot_table.to_dict(),
                 'years': pivot_table.index.tolist(),
                 'journals': pivot_table.columns.tolist()
             }
             
-            fig, ax = plt.subplots(figsize=(16, 10))
+            fig, ax = plt.subplots(figsize=(12, 9), dpi=600)
             
-            im = ax.imshow(pivot_table.values, cmap='Blues', aspect='auto', vmin=0)
+            im = ax.imshow(pivot_table.values, cmap=self.plot_settings['heatmap_palette'], 
+                          aspect='auto', vmin=0)
             
             ax.set_xticks(np.arange(len(pivot_table.columns)))
             ax.set_yticks(np.arange(len(pivot_table.index)))
-            ax.set_xticklabels(pivot_table.columns, rotation=45, ha='right', fontsize=9)
-            ax.set_yticklabels(pivot_table.index.astype(int), fontsize=10)
+            ax.set_xticklabels(pivot_table.columns, rotation=45, ha='right', fontsize=8)
+            ax.set_yticklabels(pivot_table.index.astype(int), fontsize=9)
             
-            # Добавляем значения
+            # Add values
             for i in range(len(pivot_table.index)):
                 for j in range(len(pivot_table.columns)):
                     value = pivot_table.iloc[i, j]
@@ -576,15 +809,15 @@ class ScientificDataAnalyzer:
                         ax.text(j, i, f'{value:.1f}',
                               ha="center", va="center",
                               color="white" if value > pivot_table.values.max()/2 else "black",
-                              fontsize=8, fontweight='bold')
+                              fontsize=7, fontweight='bold')
             
             ax.set_xlabel('Journal', fontweight='bold')
             ax.set_ylabel('Publication Year', fontweight='bold')
             ax.set_title(f'Average Annual Citation Rate by Journal and Year (Top {top_journals} Journals)',
-                        fontweight='bold', fontsize=16)
+                        fontweight='bold', fontsize=14)
             
             cbar = ax.figure.colorbar(im, ax=ax)
-            cbar.ax.set_ylabel('Average Annual Citations (CR)', rotation=90, fontsize=12)
+            cbar.ax.set_ylabel('Average Annual Citations (CR)', rotation=90, fontsize=11)
             
             plt.tight_layout()
             return fig
@@ -594,7 +827,7 @@ class ScientificDataAnalyzer:
             return None
     
     def plot_5_collaboration_vs_citations_linear(self):
-        """5. Зависимость цитирований от коллабораций (Линейная шкала)"""
+        """5. Collaboration vs Citations (Linear scale)"""
         try:
             required_cols = ['author count', 'num_affiliations', 'num_countries', 'max_citations']
             if not all(col in self.df_processed.columns for col in required_cols):
@@ -604,9 +837,9 @@ class ScientificDataAnalyzer:
             if len(valid_data) < 10:
                 return None
             
-            fig, axes = plt.subplots(1, 3, figsize=(18, 6))
+            fig, axes = plt.subplots(1, 3, figsize=(12, 9), dpi=600)
             fig.suptitle('Collaboration Scale vs Citation Impact (Linear Scale)', 
-                        fontweight='bold', fontsize=16)
+                        fontweight='bold', fontsize=14)
             
             metrics = [
                 ('author count', 'Number of Authors', axes[0]),
@@ -620,12 +853,12 @@ class ScientificDataAnalyzer:
                                    c=valid_data['num_countries'] if metric != 'num_countries' else valid_data['author count'],
                                    s=valid_data['author count'] * 10,
                                    alpha=0.6,
-                                   cmap='viridis',
+                                   cmap=self.plot_settings['scatter_palette'],
                                    edgecolors='black',
                                    linewidth=0.5)
                 
-                # Линейная регрессия
-                if len(valid_data) > 10:
+                # Linear regression if enabled
+                if self.plot_settings['show_regression'] and len(valid_data) > 10:
                     x = valid_data[metric].values
                     y = valid_data['max_citations'].values
                     mask = ~(np.isnan(x) | np.isnan(y))
@@ -635,19 +868,19 @@ class ScientificDataAnalyzer:
                         y_line = intercept + slope * x_line
                         ax.plot(x_line, y_line, 'r--', linewidth=2, 
                                label=f'r = {r_value:.3f}, p = {p_value:.3f}')
+                        ax.legend(loc='upper left', fontsize=8)
                 
                 ax.set_xlabel(label, fontweight='bold')
                 ax.set_ylabel('Maximum Citations (max(CR, OA))', fontweight='bold')
                 ax.set_title(f'{label} vs Citations', fontweight='bold')
-                ax.legend(loc='upper left', fontsize=8)
                 ax.grid(True, alpha=0.3)
                 
                 if idx < 2:
                     cbar = plt.colorbar(scatter, ax=ax)
                     cbar_label = 'Number of Countries' if metric != 'num_countries' else 'Number of Authors'
-                    cbar.set_label(cbar_label, fontweight='bold')
+                    cbar.set_label(cbar_label, fontweight='bold', fontsize=9)
             
-            # Сохраняем данные
+            # Save data
             self.plot_data['5_collaboration_vs_citations_linear'] = valid_data[required_cols].to_dict('records')
             
             plt.tight_layout()
@@ -658,7 +891,7 @@ class ScientificDataAnalyzer:
             return None
     
     def plot_6_collaboration_vs_citations_log(self):
-        """6. Зависимость цитирований от коллабораций (логарифмическая шкала только для Y)"""
+        """6. Collaboration vs Citations (Log Y scale)"""
         try:
             required_cols = ['author count', 'num_affiliations', 'num_countries', 'max_citations']
             if not all(col in self.df_processed.columns for col in required_cols):
@@ -668,9 +901,9 @@ class ScientificDataAnalyzer:
             if len(valid_data) < 10:
                 return None
             
-            fig, axes = plt.subplots(1, 3, figsize=(18, 6))
+            fig, axes = plt.subplots(1, 3, figsize=(12, 9), dpi=600)
             fig.suptitle('Collaboration Scale vs Citation Impact (Log Y Scale)', 
-                        fontweight='bold', fontsize=16)
+                        fontweight='bold', fontsize=14)
             
             metrics = [
                 ('author count', 'Number of Authors', axes[0]),
@@ -679,27 +912,27 @@ class ScientificDataAnalyzer:
             ]
             
             for idx, (metric, label, ax) in enumerate(metrics):
-                # Фильтруем данные > 0 для логарифмической шкалы по Y
+                # Filter data > 0 for log scale on Y
                 plot_data = valid_data[valid_data['max_citations'] > 0].copy()
                 if len(plot_data) < 10:
                     continue
                 
-                # Создаем scatter plot
+                # Create scatter plot
                 scatter = ax.scatter(plot_data[metric],
                                    plot_data['max_citations'],
                                    c=plot_data['num_countries'] if metric != 'num_countries' else plot_data['author count'],
                                    s=plot_data['author count'] * 10,
                                    alpha=0.6,
-                                   cmap='viridis',
+                                   cmap=self.plot_settings['scatter_palette'],
                                    edgecolors='black',
                                    linewidth=0.5)
                 
-                # Экспоненциальная регрессия (log Y)
-                if len(plot_data) > 10:
+                # Exponential regression (log Y) if enabled
+                if self.plot_settings['show_regression'] and len(plot_data) > 10:
                     x = plot_data[metric].values
                     log_y = np.log(plot_data['max_citations'].values)
                     
-                    # Убираем бесконечные значения
+                    # Remove infinite values
                     mask = np.isfinite(log_y)
                     if mask.sum() > 10:
                         slope, intercept, r_value, p_value, std_err = stats.linregress(x[mask], log_y[mask])
@@ -707,44 +940,38 @@ class ScientificDataAnalyzer:
                         y_line = np.exp(intercept + slope * x_line)
                         ax.plot(x_line, y_line, 'r--', linewidth=2, 
                                label=f'exponential: y ∝ exp({slope:.3f}x), r = {r_value:.3f}')
+                        ax.legend(loc='upper left', fontsize=8)
                 
                 ax.set_xlabel(label, fontweight='bold')
                 ax.set_ylabel('Maximum Citations (max(CR, OA)) - Log Scale', fontweight='bold')
                 ax.set_title(f'{label} vs Citations (Log Y Scale)', fontweight='bold')
                 
-                # Устанавливаем логарифмическую шкалу только для оси Y
+                # Set log scale only for Y axis
                 ax.set_yscale('log')
-                # Ось X остается линейной
-                
-                ax.legend(loc='upper left', fontsize=8)
                 ax.grid(True, alpha=0.3, which='both')
                 
-                # Добавляем цветовую шкалу
+                # Add colorbar
                 cbar = plt.colorbar(scatter, ax=ax)
                 if metric != 'num_countries':
-                    cbar.set_label('Number of Countries', fontweight='bold', fontsize=10)
+                    cbar.set_label('Number of Countries', fontweight='bold', fontsize=9)
                 else:
-                    cbar.set_label('Number of Authors', fontweight='bold', fontsize=10)
+                    cbar.set_label('Number of Authors', fontweight='bold', fontsize=9)
                 
-                # Добавляем легенду для размера пузырьков
-                from matplotlib.lines import Line2D
+                # Add legend for bubble sizes
                 legend_elements = []
-                
-                # Определяем размеры пузырьков для легенды
-                size_values = [2, 5, 10, 15]  # количество авторов
+                size_values = [2, 5, 10, 15]
                 for n_authors in size_values:
                     if n_authors <= plot_data['author count'].max():
-                        marker_size = n_authors * 10  # соответствие размеру в scatter
+                        marker_size = n_authors * 10
                         legend_elements.append(Line2D([0], [0], marker='o', color='w',
                                                      markerfacecolor='gray', 
                                                      markersize=np.sqrt(marker_size),
                                                      label=f'{n_authors} authors'))
-                
                 if legend_elements:
                     ax.legend(handles=legend_elements, title='Bubble size = Team size',
                              loc='lower right', fontsize=8, title_fontsize=9)
             
-            # Сохраняем данные
+            # Save data
             self.plot_data['6_collaboration_vs_citations_log'] = valid_data[required_cols].to_dict('records')
             
             plt.tight_layout()
@@ -755,7 +982,7 @@ class ScientificDataAnalyzer:
             return None
     
     def plot_6_1_bubble_chart(self):
-        """6.1 Пузырьковая диаграмма: References vs Citations (линейная шкала)"""
+        """6.1 Bubble chart: References vs Citations (linear scale)"""
         try:
             required_cols = ['references_count', 'Citation counts (CR)', 'author count', 'num_countries']
             if not all(col in self.df_processed.columns for col in required_cols):
@@ -765,36 +992,49 @@ class ScientificDataAnalyzer:
             if len(valid_data) < 10:
                 return None
             
-            fig, ax = plt.subplots(figsize=(14, 10))
+            fig, ax = plt.subplots(figsize=(12, 9), dpi=600)
             
             scatter = ax.scatter(valid_data['references_count'],
                                valid_data['Citation counts (CR)'],
                                s=valid_data['author count'] * 40,
                                c=valid_data['num_countries'],
-                               cmap='coolwarm',
+                               cmap=self.plot_settings['scatter_palette'],
                                alpha=0.7,
                                edgecolors='black',
                                linewidth=0.5)
             
+            # Regression line if enabled
+            if self.plot_settings['show_regression'] and len(valid_data) > 10:
+                x = valid_data['references_count'].values
+                y = valid_data['Citation counts (CR)'].values
+                mask = ~(np.isnan(x) | np.isnan(y))
+                if mask.sum() > 10:
+                    slope, intercept, r_value, p_value, std_err = stats.linregress(x[mask], y[mask])
+                    x_line = np.linspace(x[mask].min(), x[mask].max(), 100)
+                    y_line = intercept + slope * x_line
+                    ax.plot(x_line, y_line, 'r--', linewidth=2,
+                           label=f'Regression: r = {r_value:.3f}, p = {p_value:.3f}')
+                    ax.legend(loc='upper left', fontsize=9)
+            
             ax.set_xlabel('Number of References', fontweight='bold')
             ax.set_ylabel('Total Citations (CR) - Linear Scale', fontweight='bold')
             ax.set_title('Research Breadth vs Impact (Linear Scale)',
-                        fontweight='bold', fontsize=16)
+                        fontweight='bold', fontsize=14)
             
             cbar = plt.colorbar(scatter, ax=ax)
             cbar.set_label('Number of Collaborating Countries', fontweight='bold')
             
-            # Легенда для размеров
+            # Legend for sizes
+            legend_elements = []
             sizes = [5, 10, 15]
             labels = ['5 authors', '10 authors', '15 authors']
-            legend_elements = [plt.scatter([], [], s=size*40, c='gray', alpha=0.7,
-                                          edgecolors='black', label=label)
-                              for size, label in zip(sizes, labels)]
-            
-            ax.legend(handles=legend_elements, title='Team Size', loc='upper left')
+            for size, label in zip(sizes, labels):
+                legend_elements.append(plt.scatter([], [], s=size*40, c='gray', alpha=0.7,
+                                                  edgecolors='black', label=label))
+            ax.legend(handles=legend_elements, title='Team Size', loc='upper left', fontsize=8)
             ax.grid(True, alpha=0.3)
             
-            # Сохраняем данные
+            # Save data
             self.plot_data['6_1_bubble_chart'] = valid_data[required_cols].to_dict('records')
             
             plt.tight_layout()
@@ -805,7 +1045,7 @@ class ScientificDataAnalyzer:
             return None
     
     def plot_6_2_bubble_chart(self):
-        """6.2 Пузырьковая диаграмма: References vs Citations (логарифмическая шкала)"""
+        """6.2 Bubble chart: References vs Citations (logarithmic scale)"""
         try:
             required_cols = ['references_count', 'Citation counts (CR)', 'author count', 'num_countries']
             if not all(col in self.df_processed.columns for col in required_cols):
@@ -815,53 +1055,55 @@ class ScientificDataAnalyzer:
             if len(valid_data) < 10:
                 return None
             
-            fig, ax = plt.subplots(figsize=(14, 10))
+            fig, ax = plt.subplots(figsize=(12, 9), dpi=600)
             
-            scatter = ax.scatter(valid_data['references_count'],
-                               valid_data['Citation counts (CR)'],
-                               s=valid_data['author count'] * 40,
-                               c=valid_data['num_countries'],
-                               cmap='coolwarm',
+            # Filter positive citations for log scale
+            plot_data = valid_data[valid_data['Citation counts (CR)'] > 0].copy()
+            
+            scatter = ax.scatter(plot_data['references_count'],
+                               plot_data['Citation counts (CR)'],
+                               s=plot_data['author count'] * 40,
+                               c=plot_data['num_countries'],
+                               cmap=self.plot_settings['scatter_palette'],
                                alpha=0.7,
                                edgecolors='black',
                                linewidth=0.5)
             
+            # Regression line for log-log if enabled
+            if self.plot_settings['show_regression'] and len(plot_data) > 10:
+                x = plot_data['references_count'].values
+                log_y = np.log(plot_data['Citation counts (CR)'].values)
+                mask = ~(np.isnan(x) | np.isnan(log_y))
+                if mask.sum() > 10:
+                    slope, intercept, r_value, p_value, std_err = stats.linregress(x[mask], log_y[mask])
+                    x_line = np.linspace(x[mask].min(), x[mask].max(), 100)
+                    y_line = np.exp(intercept + slope * x_line)
+                    ax.plot(x_line, y_line, 'r--', linewidth=2,
+                           label=f'exponential: y ∝ exp({slope:.3f}x), r = {r_value:.3f}')
+                    ax.legend(loc='upper left', fontsize=9)
+            
             ax.set_xlabel('Number of References', fontweight='bold')
             ax.set_ylabel('Total Citations (CR) - Log Scale', fontweight='bold')
             ax.set_title('Research Breadth vs Impact (Logarithmic Scale)',
-                        fontweight='bold', fontsize=16)
+                        fontweight='bold', fontsize=14)
             
-            # Устанавливаем логарифмическую шкалу для оси Y
+            # Set logarithmic scale for Y axis
             ax.set_yscale('log')
-            
-            # Убедимся, что значения больше 0 для логарифмической шкалы
-            min_citation = valid_data['Citation counts (CR)'].min()
-            if min_citation <= 0:
-                valid_log_data = valid_data[valid_data['Citation counts (CR)'] > 0].copy()
-                if len(valid_log_data) > 0:
-                    scatter = ax.scatter(valid_log_data['references_count'],
-                                       valid_log_data['Citation counts (CR)'],
-                                       s=valid_log_data['author count'] * 40,
-                                       c=valid_log_data['num_countries'],
-                                       cmap='coolwarm',
-                                       alpha=0.7,
-                                       edgecolors='black',
-                                       linewidth=0.5)
             
             cbar = plt.colorbar(scatter, ax=ax)
             cbar.set_label('Number of Collaborating Countries', fontweight='bold')
             
-            # Легенда для размеров
+            # Legend for sizes
+            legend_elements = []
             sizes = [5, 10, 15]
             labels = ['5 authors', '10 authors', '15 authors']
-            legend_elements = [plt.scatter([], [], s=size*40, c='gray', alpha=0.7,
-                                          edgecolors='black', label=label)
-                              for size, label in zip(sizes, labels)]
-            
-            ax.legend(handles=legend_elements, title='Team Size', loc='upper left')
+            for size, label in zip(sizes, labels):
+                legend_elements.append(plt.scatter([], [], s=size*40, c='gray', alpha=0.7,
+                                                  edgecolors='black', label=label))
+            ax.legend(handles=legend_elements, title='Team Size', loc='upper left', fontsize=8)
             ax.grid(True, alpha=0.3, which='both')
             
-            # Сохраняем данные
+            # Save data
             self.plot_data['6_2_bubble_chart'] = valid_data[required_cols].to_dict('records')
             
             plt.tight_layout()
@@ -872,12 +1114,12 @@ class ScientificDataAnalyzer:
             return None
     
     def plot_7_concepts_analysis(self, top_n=30):
-        """7. Анализ концептов (30 топ концептов)"""
+        """7. Concepts analysis (top 30 concepts)"""
         try:
             if 'concepts_list' not in self.df_processed.columns:
                 return None
             
-            # Собираем все концепты
+            # Collect all concepts
             all_concepts = []
             for concepts in self.df_processed['concepts_list']:
                 if isinstance(concepts, list):
@@ -889,32 +1131,32 @@ class ScientificDataAnalyzer:
             concept_counts = pd.Series(all_concepts).value_counts()
             top_concepts = concept_counts.head(top_n)
             
-            # Сохраняем данные
+            # Save data
             self.plot_data['7_concepts_analysis'] = {
                 'top_concepts': top_concepts.to_dict(),
                 'total_concepts': len(concept_counts)
             }
             
-            fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(18, 10))
+            fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 9), dpi=600)
             
-            # График 1: Bar chart
+            # Graph 1: Bar chart
             y_pos = np.arange(len(top_concepts))
-            colors = plt.cm.PuBu(np.linspace(0.3, 0.9, len(top_concepts)))
+            colors = plt.cm.get_cmap(self.plot_settings['bar_palette'])(np.linspace(0.3, 0.9, len(top_concepts)))
             
             bars = ax1.barh(y_pos, top_concepts.values, color=colors, edgecolor='black')
             ax1.set_yticks(y_pos)
-            ax1.set_yticklabels(top_concepts.index, fontsize=9)
+            ax1.set_yticklabels(top_concepts.index, fontsize=8)
             ax1.set_xlabel('Frequency', fontweight='bold')
             ax1.set_title(f'Top {top_n} Research Concepts', fontweight='bold')
             ax1.invert_yaxis()
             
-            # Добавляем значения
+            # Add values
             for bar in bars:
                 width = bar.get_width()
                 ax1.text(width * 1.01, bar.get_y() + bar.get_height()/2,
                         f'{int(width)}', va='center', fontsize=8)
             
-            # График 2: Word cloud
+            # Graph 2: Word cloud
             fig_height = fig.get_size_inches()[1]
             wordcloud_height = fig_height * 0.8
             wordcloud_width = wordcloud_height * 1.6
@@ -922,16 +1164,14 @@ class ScientificDataAnalyzer:
             wordcloud = WordCloud(width=int(wordcloud_width*100), 
                                 height=int(wordcloud_height*100), 
                                 background_color='white',
-                                colormap='viridis', max_words=100).generate_from_frequencies(concept_counts.to_dict())
+                                colormap=self.plot_settings['sequential_palette'], 
+                                max_words=100).generate_from_frequencies(concept_counts.to_dict())
             
             ax2.imshow(wordcloud, interpolation='bilinear')
             ax2.axis('off')
             ax2.set_title('Concept Word Cloud', fontweight='bold')
             
-            # Устанавливаем одинаковые пределы для осей Y
-            ax1.set_ylim(-0.5, len(top_concepts) - 0.5)
-            
-            plt.suptitle('Research Concepts Analysis', fontweight='bold', fontsize=16)
+            plt.suptitle('Research Concepts Analysis', fontweight='bold', fontsize=14)
             plt.tight_layout()
             
             return fig
@@ -941,12 +1181,12 @@ class ScientificDataAnalyzer:
             return None
     
     def plot_8_concept_cooccurrence(self, top_n=15):
-        """8. Матрица совместной встречаемости концептов"""
+        """8. Concept co-occurrence matrix"""
         try:
             if 'concepts_list' not in self.df_processed.columns:
                 return None
             
-            # Собираем топ концепты
+            # Collect top concepts
             all_concepts = []
             for concepts in self.df_processed['concepts_list']:
                 if isinstance(concepts, list):
@@ -958,7 +1198,7 @@ class ScientificDataAnalyzer:
             concept_counts = pd.Series(all_concepts).value_counts()
             top_concepts = concept_counts.head(top_n).index.tolist()
             
-            # Создаем матрицу совместной встречаемости
+            # Create co-occurrence matrix
             cooccurrence = pd.DataFrame(0, index=top_concepts, columns=top_concepts)
             
             for concepts in self.df_processed['concepts_list']:
@@ -970,22 +1210,22 @@ class ScientificDataAnalyzer:
                             cooccurrence.loc[c1, c2] += 1
                             cooccurrence.loc[c2, c1] += 1
             
-            # Сохраняем данные
+            # Save data
             self.plot_data['8_concept_cooccurrence'] = {
                 'matrix': cooccurrence.to_dict(),
                 'concepts': top_concepts
             }
             
-            fig, ax = plt.subplots(figsize=(12, 10))
+            fig, ax = plt.subplots(figsize=(12, 9), dpi=600)
             
-            im = ax.imshow(cooccurrence.values, cmap='Blues')
+            im = ax.imshow(cooccurrence.values, cmap=self.plot_settings['heatmap_palette'])
             
             ax.set_xticks(np.arange(len(top_concepts)))
             ax.set_yticks(np.arange(len(top_concepts)))
-            ax.set_xticklabels(top_concepts, rotation=45, ha='right', fontsize=9)
-            ax.set_yticklabels(top_concepts, fontsize=9)
+            ax.set_xticklabels(top_concepts, rotation=45, ha='right', fontsize=8)
+            ax.set_yticklabels(top_concepts, fontsize=8)
             
-            # Добавляем значения
+            # Add values
             for i in range(len(top_concepts)):
                 for j in range(len(top_concepts)):
                     value = cooccurrence.iloc[i, j]
@@ -996,10 +1236,10 @@ class ScientificDataAnalyzer:
                                fontsize=8, fontweight='bold')
             
             ax.set_title(f'Concept Co-occurrence Matrix (Top {top_n} Concepts)',
-                        fontweight='bold', fontsize=16)
+                        fontweight='bold', fontsize=14)
             
             cbar = ax.figure.colorbar(im, ax=ax)
-            cbar.ax.set_ylabel('Co-occurrence Frequency', rotation=90, fontsize=12)
+            cbar.ax.set_ylabel('Co-occurrence Frequency', rotation=90, fontsize=11)
             
             plt.tight_layout()
             return fig
@@ -1009,12 +1249,12 @@ class ScientificDataAnalyzer:
             return None
     
     def plot_9_concept_influence(self):
-        """9. Влияние ключевых концептов"""
+        """9. Influence of key concepts"""
         try:
             if 'concepts_list' not in self.df_processed.columns or 'max_citations' not in self.df_processed.columns:
                 return None
             
-            # Разворачиваем концепты и связываем с цитированиями
+            # Expand concepts and link with citations
             concept_citations = []
             for idx, row in self.df_processed.iterrows():
                 if isinstance(row['concepts_list'], list):
@@ -1032,7 +1272,7 @@ class ScientificDataAnalyzer:
             
             concept_df = pd.DataFrame(concept_citations)
             
-            # Агрегируем по концептам
+            # Aggregate by concept
             concept_stats = concept_df.groupby('concept').agg({
                 'max_citations': ['sum', 'mean', 'median'],
                 'max_annual_citations': 'mean',
@@ -1045,18 +1285,18 @@ class ScientificDataAnalyzer:
             concept_stats = concept_stats[concept_stats['num_papers'] >= 2]
             concept_stats = concept_stats.sort_values('mean_citations', ascending=False).head(20)
             
-            # Сохраняем данные
+            # Save data
             self.plot_data['9_concept_influence'] = concept_stats.reset_index().to_dict('records')
             
-            fig, axes = plt.subplots(1, 2, figsize=(18, 10))
+            fig, axes = plt.subplots(1, 2, figsize=(12, 9), dpi=600)
             
-            # График 1: Средние цитирования
+            # Graph 1: Mean citations
             y_pos = np.arange(len(concept_stats))
-            colors = plt.cm.RdYlGn(np.linspace(0.3, 0.9, len(concept_stats)))
+            colors = plt.cm.get_cmap(self.plot_settings['bar_palette'])(np.linspace(0.3, 0.9, len(concept_stats)))
             
             bars1 = axes[0].barh(y_pos, concept_stats['mean_citations'], color=colors, edgecolor='black')
             axes[0].set_yticks(y_pos)
-            axes[0].set_yticklabels(concept_stats.index, fontsize=9)
+            axes[0].set_yticklabels(concept_stats.index, fontsize=8)
             axes[0].set_xlabel('Mean Citations per Paper', fontweight='bold')
             axes[0].set_title('Top Concepts by Average Citation Impact', fontweight='bold')
             axes[0].invert_yaxis()
@@ -1066,12 +1306,12 @@ class ScientificDataAnalyzer:
                 axes[0].text(width * 1.01, bar.get_y() + bar.get_height()/2,
                            f'n={int(row["num_papers"])}', va='center', fontsize=8)
             
-            # График 2: Пузырьковая диаграмма
+            # Graph 2: Bubble chart
             scatter = axes[1].scatter(concept_stats['mean_annual_citations'],
                                     concept_stats['mean_citations'],
                                     s=concept_stats['num_papers'] * 15,
                                     c=concept_stats['total_citations'],
-                                    cmap='plasma',
+                                    cmap=self.plot_settings['scatter_palette'],
                                     alpha=0.7,
                                     edgecolors='black',
                                     linewidth=0.5)
@@ -1084,7 +1324,7 @@ class ScientificDataAnalyzer:
             cbar = plt.colorbar(scatter, ax=axes[1])
             cbar.set_label('Total Citations (Sum)', fontweight='bold')
             
-            # Добавляем аннотации для топ-5
+            # Add annotations for top 5
             for idx, row in concept_stats.head(5).iterrows():
                 short_name = idx[:20] + '...' if len(idx) > 20 else idx
                 axes[1].annotate(short_name,
@@ -1092,7 +1332,20 @@ class ScientificDataAnalyzer:
                                xytext=(5, 5), textcoords='offset points',
                                fontsize=8, alpha=0.8)
             
-            plt.suptitle('Concept Influence Analysis', fontweight='bold', fontsize=16)
+            # Legend for bubble sizes
+            legend_elements = []
+            size_values = [2, 5, 10, 20]
+            for num_papers in size_values:
+                if num_papers <= concept_stats['num_papers'].max():
+                    legend_elements.append(Line2D([0], [0], marker='o', color='w',
+                                                 markerfacecolor='gray',
+                                                 markersize=np.sqrt(num_papers * 15 / 10),
+                                                 label=f'{num_papers} papers'))
+            if legend_elements:
+                axes[1].legend(handles=legend_elements, title='Number of Papers',
+                              loc='lower right', fontsize=8, title_fontsize=9)
+            
+            plt.suptitle('Concept Influence Analysis', fontweight='bold', fontsize=14)
             plt.tight_layout()
             
             return fig
@@ -1102,7 +1355,7 @@ class ScientificDataAnalyzer:
             return None
     
     def plot_10_temporal_evolution(self):
-        """10. Эволюция публикационной активности и влияния во времени"""
+        """10. Temporal evolution of publication activity and impact"""
         try:
             if 'year' not in self.df_processed.columns or 'max_citations' not in self.df_processed.columns:
                 return None
@@ -1111,7 +1364,7 @@ class ScientificDataAnalyzer:
             if len(valid_data) < 10:
                 return None
             
-            # Группируем по годам
+            # Group by year
             year_stats = valid_data.groupby('year').agg({
                 'max_citations': ['sum', 'mean'],
                 'max_annual_citations': 'mean',
@@ -1121,19 +1374,19 @@ class ScientificDataAnalyzer:
             year_stats.columns = ['total_citations', 'mean_citations', 'mean_annual_citations', 'num_papers']
             year_stats = year_stats.sort_index()
             
-            # Сохраняем данные
+            # Save data
             self.plot_data['10_temporal_evolution'] = year_stats.reset_index().to_dict('records')
             
-            fig, ax1 = plt.subplots(figsize=(14, 8))
+            fig, ax1 = plt.subplots(figsize=(12, 9), dpi=600)
             
-            # Столбцы: число публикаций
+            # Bars: number of publications
             ax1.bar(year_stats.index, year_stats['num_papers'], 
                    alpha=0.4, color='steelblue', label='Number of Papers', edgecolor='black')
             ax1.set_xlabel('Publication Year', fontweight='bold')
             ax1.set_ylabel('Number of Papers', fontweight='bold', color='steelblue')
             ax1.tick_params(axis='y', labelcolor='steelblue')
             
-            # Линия: суммарные цитирования (правая ось)
+            # Line: total citations (right axis)
             ax2 = ax1.twinx()
             line1 = ax2.plot(year_stats.index, year_stats['total_citations'], 
                            'o-', color='darkorange', linewidth=2.5, markersize=6,
@@ -1141,7 +1394,7 @@ class ScientificDataAnalyzer:
             ax2.set_ylabel('Total Citations', fontweight='bold', color='darkorange')
             ax2.tick_params(axis='y', labelcolor='darkorange')
             
-            # Линия: средние цитирования (дополнительно)
+            # Line: mean citations (additional)
             ax3 = ax1.twinx()
             ax3.spines['right'].set_position(('outward', 60))
             line2 = ax3.plot(year_stats.index, year_stats['mean_citations'], 
@@ -1150,13 +1403,13 @@ class ScientificDataAnalyzer:
             ax3.set_ylabel('Mean Citations per Paper', fontweight='bold', color='darkgreen')
             ax3.tick_params(axis='y', labelcolor='darkgreen')
             
-            # Объединяем легенды
+            # Combine legends
             lines = line1 + line2
             labels = [l.get_label() for l in lines]
-            ax1.legend(lines, labels, loc='upper left')
+            ax1.legend(lines, labels, loc='upper left', fontsize=9)
             
             ax1.set_title('Temporal Evolution: Publications and Citation Impact',
-                        fontweight='bold', fontsize=16)
+                        fontweight='bold', fontsize=14)
             ax1.grid(True, alpha=0.3)
             
             plt.tight_layout()
@@ -1167,7 +1420,7 @@ class ScientificDataAnalyzer:
             return None
     
     def plot_11_temporal_heatmap(self):
-        """11. Тепловая карта: Год публикации vs Возраст статьи"""
+        """11. Heatmap: Publication year vs Article age"""
         try:
             if 'year' not in self.df_processed.columns or 'max_annual_citations' not in self.df_processed.columns:
                 return None
@@ -1176,7 +1429,7 @@ class ScientificDataAnalyzer:
             if len(valid_data) < 10:
                 return None
             
-            # Создаем данные для тепловой карты
+            # Create data for heatmap
             heatmap_data = []
             current_year = datetime.now().year
             
@@ -1195,7 +1448,7 @@ class ScientificDataAnalyzer:
             
             heatmap_df = pd.DataFrame(heatmap_data)
             
-            # Создаем сводную таблицу
+            # Create pivot table
             pivot_table = heatmap_df.pivot_table(
                 values='annual_citations',
                 index='age',
@@ -1204,28 +1457,29 @@ class ScientificDataAnalyzer:
                 fill_value=0
             ).sort_index(ascending=False)
             
-            # Сохраняем данные
+            # Save data
             self.plot_data['11_temporal_heatmap'] = {
                 'pivot_data': pivot_table.to_dict(),
                 'years': pivot_table.columns.tolist(),
                 'ages': pivot_table.index.tolist()
             }
             
-            fig, ax = plt.subplots(figsize=(16, 10))
+            fig, ax = plt.subplots(figsize=(12, 9), dpi=600)
             
-            im = ax.imshow(pivot_table.values, cmap='RdYlGn', aspect='auto', vmin=0)
+            im = ax.imshow(pivot_table.values, cmap=self.plot_settings['heatmap_palette'], 
+                          aspect='auto', vmin=0)
             
             ax.set_xticks(np.arange(len(pivot_table.columns)))
             ax.set_yticks(np.arange(len(pivot_table.index)))
-            ax.set_xticklabels(pivot_table.columns.astype(int), rotation=45, ha='right', fontsize=9)
-            ax.set_yticklabels(pivot_table.index, fontsize=10)
+            ax.set_xticklabels(pivot_table.columns.astype(int), rotation=45, ha='right', fontsize=8)
+            ax.set_yticklabels(pivot_table.index, fontsize=9)
             ax.set_xlabel('Publication Year', fontweight='bold')
             ax.set_ylabel('Article Age (Years)', fontweight='bold')
             ax.set_title('Annual Citation Rate by Publication Year and Article Age',
-                        fontweight='bold', fontsize=16)
+                        fontweight='bold', fontsize=14)
             
             cbar = ax.figure.colorbar(im, ax=ax)
-            cbar.ax.set_ylabel('Mean Annual Citations (max(CR, OA))', rotation=90, fontsize=12)
+            cbar.ax.set_ylabel('Mean Annual Citations (max(CR, OA))', rotation=90, fontsize=11)
             
             plt.tight_layout()
             return fig
@@ -1235,12 +1489,12 @@ class ScientificDataAnalyzer:
             return None
     
     def plot_11_team_size_analysis(self):
-        """11. Анализ размера команды (оригинальный)"""
+        """11. Team size analysis"""
         try:
             if 'author count' not in self.df_processed.columns:
                 return None
             
-            # Категоризация размера команды
+            # Categorize team size
             def categorize_team_size(n):
                 if pd.isna(n):
                     return 'Unknown'
@@ -1262,7 +1516,7 @@ class ScientificDataAnalyzer:
             
             self.df_processed['team_size_group'] = self.df_processed['author count'].apply(categorize_team_size)
             
-            # Группируем данные
+            # Group data
             group_stats = self.df_processed.groupby('team_size_group').agg({
                 'count': ['mean', 'median', 'std', 'size'],
                 'Citation counts (CR)': 'mean',
@@ -1272,34 +1526,34 @@ class ScientificDataAnalyzer:
             group_stats.columns = ['mean_attention', 'median_attention', 'std_attention',
                                  'num_papers', 'mean_citations', 'mean_references']
             
-            # Упорядочиваем по возрастанию числа авторов
+            # Order by increasing author count
             custom_order = ['Single author', '2 authors', '3 authors', '4-5 authors', 
                           '6-8 authors', '9-12 authors', '13+ authors', 'Unknown']
             
-            # Фильтруем только существующие категории
             existing_categories = [cat for cat in custom_order if cat in group_stats.index]
             group_stats = group_stats.loc[existing_categories]
             
-            # Сохраняем данные
+            # Save data
             self.plot_data['11_team_size_analysis'] = group_stats.reset_index().to_dict('records')
             
-            fig, axes = plt.subplots(2, 2, figsize=(16, 12))
+            fig, axes = plt.subplots(2, 2, figsize=(12, 9), dpi=600)
             axes = axes.flatten()
             
-            # График 1: Распределение размеров команд
+            # Graph 1: Distribution of team sizes
             team_size_counts = self.df_processed['team_size_group'].value_counts()
             team_size_counts = team_size_counts.reindex(existing_categories, fill_value=0)
+            colors = plt.cm.get_cmap(self.plot_settings['bar_palette'])(np.linspace(0.3, 0.9, len(team_size_counts)))
             axes[0].bar(team_size_counts.index, team_size_counts.values,
-                       alpha=0.7, color='steelblue', edgecolor='black')
+                       alpha=0.7, color=colors, edgecolor='black')
             axes[0].set_xlabel('Team Size', fontweight='bold')
             axes[0].set_ylabel('Number of Papers', fontweight='bold')
             axes[0].set_title('Distribution of Team Sizes', fontweight='bold')
             axes[0].tick_params(axis='x', rotation=45)
             axes[0].grid(True, alpha=0.3, axis='y')
             
-            # График 2: Среднее внимание по размеру команды
+            # Graph 2: Mean attention by team size
             axes[1].bar(group_stats.index, group_stats['mean_attention'],
-                       alpha=0.7, color='darkorange', edgecolor='black')
+                       alpha=0.7, color=colors, edgecolor='black')
             axes[1].errorbar(group_stats.index, group_stats['mean_attention'],
                            yerr=group_stats['std_attention'],
                            fmt='none', color='black', capsize=5)
@@ -1309,25 +1563,25 @@ class ScientificDataAnalyzer:
             axes[1].tick_params(axis='x', rotation=45)
             axes[1].grid(True, alpha=0.3, axis='y')
             
-            # График 3: Средние цитирования
+            # Graph 3: Mean citations
             axes[2].bar(group_stats.index, group_stats['mean_citations'],
-                       alpha=0.7, color='darkgreen', edgecolor='black')
+                       alpha=0.7, color=colors, edgecolor='black')
             axes[2].set_xlabel('Team Size', fontweight='bold')
             axes[2].set_ylabel('Mean Citations (CR)', fontweight='bold')
             axes[2].set_title('Mean Citations by Team Size', fontweight='bold')
             axes[2].tick_params(axis='x', rotation=45)
             axes[2].grid(True, alpha=0.3, axis='y')
             
-            # График 4: Средние ссылки
+            # Graph 4: Mean references
             axes[3].bar(group_stats.index, group_stats['mean_references'],
-                       alpha=0.7, color='darkred', edgecolor='black')
+                       alpha=0.7, color=colors, edgecolor='black')
             axes[3].set_xlabel('Team Size', fontweight='bold')
             axes[3].set_ylabel('Mean References', fontweight='bold')
             axes[3].set_title('Mean References by Team Size', fontweight='bold')
             axes[3].tick_params(axis='x', rotation=45)
             axes[3].grid(True, alpha=0.3, axis='y')
             
-            plt.suptitle('Team Size Analysis', fontweight='bold', fontsize=16)
+            plt.suptitle('Team Size Analysis', fontweight='bold', fontsize=14)
             plt.tight_layout()
             
             return fig
@@ -1337,7 +1591,7 @@ class ScientificDataAnalyzer:
             return None
     
     def plot_12_correlation_matrix(self):
-        """12. Корреляционная матрица с выделением ключевых параметров"""
+        """12. Correlation matrix with key parameters highlighted"""
         try:
             numeric_cols = ['author count', 'references_count',
                           'Citation counts (CR)', 'Citation counts (OA)',
@@ -1357,20 +1611,18 @@ class ScientificDataAnalyzer:
             
             corr_matrix = correlation_data.corr(method='spearman')
             
-            # Переупорядочиваем матрицу: ключевые параметры сначала
+            # Reorder matrix: key parameters first
             key_params = ['count', 'max_citations', 'max_annual_citations',
                          'Annual cit counts (CR)', 'Annual cit counts (OA)',
                          'Citation counts (CR)', 'Citation counts (OA)']
             
-            # Фильтруем только те, что есть в данных
             existing_key_params = [p for p in key_params if p in corr_matrix.columns]
             other_params = [p for p in corr_matrix.columns if p not in existing_key_params]
             
-            # Новый порядок
             new_order = existing_key_params + other_params
             corr_matrix = corr_matrix.reindex(index=new_order, columns=new_order)
             
-            # Сохраняем данные
+            # Save data
             self.plot_data['12_correlation_matrix'] = {
                 'correlation_matrix': corr_matrix.to_dict(),
                 'columns': available_cols,
@@ -1378,37 +1630,34 @@ class ScientificDataAnalyzer:
                 'key_parameters': existing_key_params
             }
             
-            fig, ax = plt.subplots(figsize=(14, 12))
+            fig, ax = plt.subplots(figsize=(12, 9), dpi=600)
             
             mask = np.triu(np.ones_like(corr_matrix, dtype=bool))
             
-            # Рисуем тепловую карту
+            # Draw heatmap
             sns.heatmap(corr_matrix, mask=mask, annot=True, fmt='.2f',
-                       cmap='coolwarm', center=0, square=True,
+                       cmap=self.plot_settings['heatmap_palette'], center=0, square=True,
                        linewidths=0.5, cbar_kws={'shrink': 0.8},
-                       ax=ax, annot_kws={'fontsize': 9})
+                       ax=ax, annot_kws={'fontsize': 8})
             
-            # Добавляем выделение для ключевых параметров
+            # Highlight key parameters
             key_param_indices = [i for i, col in enumerate(corr_matrix.columns) if col in existing_key_params]
             for idx in key_param_indices:
-                # Выделяем строки
                 ax.add_patch(plt.Rectangle((0, idx), len(corr_matrix), 1, 
                                           fill=False, edgecolor='red', linewidth=2, 
                                           alpha=0.7))
-                # Выделяем столбцы
                 ax.add_patch(plt.Rectangle((idx, 0), 1, len(corr_matrix), 
                                           fill=False, edgecolor='red', linewidth=2, 
                                           alpha=0.7))
             
-            # Добавляем легенду для выделения
-            from matplotlib.patches import Patch
-            legend_elements = [Patch(facecolor='white', edgecolor='red', linewidth=2,
-                                   alpha=0.7, label='Key parameters (Count & Citations)')]
-            ax.legend(handles=legend_elements, loc='upper right', fontsize=10)
+            legend_elements = [mpatches.Patch(facecolor='white', edgecolor='red', linewidth=2,
+                                           alpha=0.7, label='Key parameters (Count & Citations)')]
+            ax.legend(handles=legend_elements, loc='upper right', fontsize=9)
             
             ax.set_title('Correlation Matrix of Research Metrics (Spearman)\nKey Parameters Highlighted in Red', 
-                        fontweight='bold', fontsize=16)
-            plt.xticks(rotation=45, ha='right')
+                        fontweight='bold', fontsize=14)
+            plt.xticks(rotation=45, ha='right', fontsize=8)
+            plt.yticks(fontsize=8)
             
             plt.tight_layout()
             return fig
@@ -1418,7 +1667,7 @@ class ScientificDataAnalyzer:
             return None
     
     def plot_13_cr_vs_oa_comparison(self):
-        """13. Сравнение CR vs OA цитирований"""
+        """13. CR vs OA citations comparison"""
         try:
             required_cols = ['Citation counts (CR)', 'Citation counts (OA)']
             if not all(col in self.df_processed.columns for col in required_cols):
@@ -1428,11 +1677,11 @@ class ScientificDataAnalyzer:
             if len(valid_data) == 0:
                 return None
             
-            # Рассчитываем разницу
+            # Calculate difference
             valid_data['citation_diff'] = valid_data['Citation counts (OA)'] - valid_data['Citation counts (CR)']
             valid_data['citation_ratio'] = valid_data['Citation counts (OA)'] / valid_data['Citation counts (CR)'].replace(0, 1)
             
-            # Сохраняем данные
+            # Save data
             self.plot_data['13_cr_vs_oa_comparison'] = {
                 'summary': {
                     'mean_diff': float(valid_data['citation_diff'].mean()),
@@ -1444,9 +1693,9 @@ class ScientificDataAnalyzer:
                 'data_sample': valid_data[required_cols + ['citation_diff', 'citation_ratio']].head(100).to_dict('records')
             }
             
-            fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(16, 7))
+            fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 9), dpi=600)
             
-            # График 1: Scatter plot
+            # Graph 1: Scatter plot
             max_val = max(valid_data['Citation counts (CR)'].max(),
                          valid_data['Citation counts (OA)'].max())
             
@@ -1458,10 +1707,10 @@ class ScientificDataAnalyzer:
             ax1.set_xlabel('Citations from Crossref (CR)', fontweight='bold')
             ax1.set_ylabel('Citations from OpenAlex (OA)', fontweight='bold')
             ax1.set_title('Comparison of Citation Counts', fontweight='bold')
-            ax1.legend()
+            ax1.legend(fontsize=9)
             ax1.grid(True, alpha=0.3)
             
-            # График 2: Гистограмма разницы
+            # Graph 2: Histogram of differences
             ax2.hist(valid_data['citation_diff'], bins=30,
                     alpha=0.7, color='darkorange', edgecolor='black')
             ax2.axvline(x=0, color='red', linestyle='--', linewidth=2)
@@ -1470,16 +1719,16 @@ class ScientificDataAnalyzer:
             ax2.set_title('Distribution of Citation Differences', fontweight='bold')
             ax2.grid(True, alpha=0.3)
             
-            # Статистика
+            # Statistics
             stats_text = f"Mean difference: {valid_data['citation_diff'].mean():.1f}\n"
             stats_text += f"OA > CR: {(valid_data['citation_diff'] > 0).sum()} articles\n"
             stats_text += f"CR > OA: {(valid_data['citation_diff'] < 0).sum()} articles"
             
             ax2.text(0.02, 0.98, stats_text, transform=ax2.transAxes,
-                    fontsize=10, verticalalignment='top',
+                    fontsize=9, verticalalignment='top',
                     bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
             
-            plt.suptitle('Comparison of Citation Sources', fontweight='bold', fontsize=16)
+            plt.suptitle('Comparison of Citation Sources', fontweight='bold', fontsize=14)
             plt.tight_layout()
             
             return fig
@@ -1489,7 +1738,7 @@ class ScientificDataAnalyzer:
             return None
     
     def plot_14_citation_by_domain(self):
-        """14. Цитируемость по доменам науки"""
+        """14. Citation impact by research domain"""
         try:
             required_cols = ['Domain', 'Annual cit counts (CR)']
             if not all(col in self.df_processed.columns for col in required_cols):
@@ -1499,7 +1748,7 @@ class ScientificDataAnalyzer:
             if len(valid_data) == 0:
                 return None
             
-            # Агрегируем по доменам
+            # Aggregate by domain
             domain_stats = valid_data.groupby('Domain').agg({
                 'Annual cit counts (CR)': ['median', 'mean', 'std', 'count'],
                 'count': 'mean'
@@ -1509,14 +1758,14 @@ class ScientificDataAnalyzer:
                                   'num_papers', 'mean_attention']
             domain_stats = domain_stats.sort_values('median_citations', ascending=False)
             
-            # Сохраняем данные
+            # Save data
             self.plot_data['14_citation_by_domain'] = domain_stats.reset_index().to_dict('records')
             
-            # Выбираем топ доменов
+            # Select top domains
             top_domains = domain_stats.head(15).index.tolist()
             filtered_data = valid_data[valid_data['Domain'].isin(top_domains)]
             
-            fig, ax = plt.subplots(figsize=(14, 8))
+            fig, ax = plt.subplots(figsize=(12, 9), dpi=600)
             
             # Boxplot
             box_data = []
@@ -1529,12 +1778,12 @@ class ScientificDataAnalyzer:
             
             bp = ax.boxplot(box_data, labels=labels, patch_artist=True, showfliers=False)
             
-            colors = plt.cm.Set3(np.linspace(0, 1, len(box_data)))
+            colors = plt.cm.get_cmap(self.plot_settings['bar_palette'])(np.linspace(0.2, 0.8, len(box_data)))
             for patch, color in zip(bp['boxes'], colors):
                 patch.set_facecolor(color)
                 patch.set_alpha(0.7)
             
-            # Добавляем средние значения
+            # Add mean values
             means = [np.mean(group) for group in box_data]
             for i, mean in enumerate(means):
                 ax.scatter(i+1, mean, color='red', s=80, zorder=3,
@@ -1554,7 +1803,7 @@ class ScientificDataAnalyzer:
             return None
     
     def plot_15_cumulative_influence(self):
-        """15. Накопительная кривая влияния"""
+        """15. Cumulative influence curve"""
         try:
             if 'count' not in self.df_processed.columns:
                 return None
@@ -1563,16 +1812,16 @@ class ScientificDataAnalyzer:
             if len(valid_data) == 0:
                 return None
             
-            # Сортируем по локальным цитированиям
+            # Sort by local citations
             sorted_counts = valid_data['count'].sort_values(ascending=False).reset_index(drop=True)
             
-            # Вычисляем кумулятивные суммы
+            # Calculate cumulative sums
             total_citations = sorted_counts.sum()
             cumulative_citations = sorted_counts.cumsum()
             cumulative_percentage = cumulative_citations / total_citations * 100
             article_percentage = np.arange(1, len(sorted_counts) + 1) / len(sorted_counts) * 100
             
-            # Сохраняем данные
+            # Save data
             self.plot_data['15_cumulative_influence'] = {
                 'sorted_counts': sorted_counts.tolist(),
                 'cumulative_percentage': cumulative_percentage.tolist(),
@@ -1581,15 +1830,15 @@ class ScientificDataAnalyzer:
                 'gini_coefficient': self._calculate_gini(sorted_counts.values)
             }
             
-            fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(16, 7))
+            fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 9), dpi=600)
             
-            # График 1: Накопительная кривая
+            # Graph 1: Cumulative curve
             ax1.plot(article_percentage, cumulative_percentage,
                     linewidth=2.5, color='darkgreen')
             ax1.fill_between(article_percentage, 0, cumulative_percentage,
                             alpha=0.3, color='lightgreen')
             
-            # Линия 20/80
+            # 20/80 line
             twenty_percent_idx = int(len(sorted_counts) * 0.2)
             twenty_percent_cites = cumulative_percentage.iloc[twenty_percent_idx]
             
@@ -1601,10 +1850,10 @@ class ScientificDataAnalyzer:
             ax1.set_xlabel('Percentage of Articles', fontweight='bold')
             ax1.set_ylabel('Percentage of Total Mentions', fontweight='bold')
             ax1.set_title('Cumulative Influence Curve (Lorenz Curve)', fontweight='bold')
-            ax1.legend(loc='lower right')
+            ax1.legend(loc='lower right', fontsize=9)
             ax1.grid(True, alpha=0.3)
             
-            # График 2: Распределение
+            # Graph 2: Distribution
             log_bins = np.logspace(0, np.log10(sorted_counts.max() + 1), 20)
             ax2.hist(sorted_counts, bins=log_bins, alpha=0.7,
                     color='steelblue', edgecolor='black')
@@ -1614,7 +1863,7 @@ class ScientificDataAnalyzer:
             ax2.set_title('Distribution of Local Citation Counts', fontweight='bold')
             ax2.grid(True, alpha=0.3, which='both')
             
-            # Статистика
+            # Statistics
             gini = self._calculate_gini(sorted_counts.values)
             stats_text = f"Total articles: {len(sorted_counts):,}\n"
             stats_text += f"Total mentions: {total_citations:,}\n"
@@ -1623,10 +1872,10 @@ class ScientificDataAnalyzer:
             stats_text += f"Gini coefficient: {gini:.3f}"
             
             ax2.text(0.02, 0.98, stats_text, transform=ax2.transAxes,
-                    fontsize=10, verticalalignment='top',
+                    fontsize=9, verticalalignment='top',
                     bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
             
-            plt.suptitle('Analysis of Local Influence Within Dataset', fontweight='bold', fontsize=16)
+            plt.suptitle('Analysis of Local Influence Within Dataset', fontweight='bold', fontsize=14)
             plt.tight_layout()
             
             return fig
@@ -1636,7 +1885,7 @@ class ScientificDataAnalyzer:
             return None
     
     def _calculate_gini(self, x):
-        """Расчет коэффициента Джини"""
+        """Calculate Gini coefficient"""
         x = np.sort(x)
         n = len(x)
         cumx = np.cumsum(x, dtype=float)
@@ -1645,7 +1894,7 @@ class ScientificDataAnalyzer:
         return (n + 1 - 2 * np.sum(cumx) / cumx[-1]) / n
     
     def plot_16_references_vs_impact(self):
-        """16. Объем ссылок vs влияние"""
+        """16. References vs impact"""
         try:
             required_cols = ['references_count', 'count', 'Annual cit counts (CR)']
             if not all(col in self.df_processed.columns for col in required_cols):
@@ -1655,41 +1904,52 @@ class ScientificDataAnalyzer:
             if len(valid_data) < 10:
                 return None
             
-            fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(16, 7))
+            fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 9), dpi=600)
             
-            # График 1: References vs Attention
+            # Graph 1: References vs Attention
             scatter1 = ax1.scatter(valid_data['references_count'],
                                  valid_data['count'],
                                  c=valid_data['Annual cit counts (CR)'],
-                                 cmap='viridis', alpha=0.6, s=30,
+                                 cmap=self.plot_settings['scatter_palette'], 
+                                 alpha=0.6, s=30,
                                  edgecolors='black', linewidth=0.5)
             
-            # Линейная регрессия
-            if len(valid_data) > 10:
+            # Linear regression if enabled
+            if self.plot_settings['show_regression'] and len(valid_data) > 10:
                 x = valid_data['references_count'].values
                 y = valid_data['count'].values
-                
                 slope, intercept, r_value, p_value, std_err = stats.linregress(x, y)
                 x_line = np.linspace(x.min(), x.max(), 100)
                 y_line = intercept + slope * x_line
                 ax1.plot(x_line, y_line, 'r--', linewidth=2,
                         label=f'r = {r_value:.3f}, p = {p_value:.3f}')
+                ax1.legend(fontsize=9)
             
             ax1.set_xlabel('Number of References', fontweight='bold')
             ax1.set_ylabel('Local Mentions (count)', fontweight='bold')
             ax1.set_title('References vs Local Attention', fontweight='bold')
-            ax1.legend()
             ax1.grid(True, alpha=0.3)
             
             cbar1 = plt.colorbar(scatter1, ax=ax1)
             cbar1.set_label('Annual Citations (CR)', fontweight='bold')
             
-            # График 2: References vs Citations
+            # Graph 2: References vs Citations
             scatter2 = ax2.scatter(valid_data['references_count'],
                                  valid_data['Annual cit counts (CR)'],
                                  c=valid_data['count'],
-                                 cmap='plasma', alpha=0.6, s=30,
+                                 cmap=self.plot_settings['scatter_palette'], 
+                                 alpha=0.6, s=30,
                                  edgecolors='black', linewidth=0.5)
+            
+            if self.plot_settings['show_regression'] and len(valid_data) > 10:
+                x = valid_data['references_count'].values
+                y = valid_data['Annual cit counts (CR)'].values
+                slope, intercept, r_value, p_value, std_err = stats.linregress(x, y)
+                x_line = np.linspace(x.min(), x.max(), 100)
+                y_line = intercept + slope * x_line
+                ax2.plot(x_line, y_line, 'r--', linewidth=2,
+                        label=f'r = {r_value:.3f}, p = {p_value:.3f}')
+                ax2.legend(fontsize=9)
             
             ax2.set_xlabel('Number of References', fontweight='bold')
             ax2.set_ylabel('Annual Citations (CR)', fontweight='bold')
@@ -1699,7 +1959,7 @@ class ScientificDataAnalyzer:
             cbar2 = plt.colorbar(scatter2, ax=ax2)
             cbar2.set_label('Local Mentions', fontweight='bold')
             
-            plt.suptitle('Impact of Reference Count on Research Metrics', fontweight='bold', fontsize=16)
+            plt.suptitle('Impact of Reference Count on Research Metrics', fontweight='bold', fontsize=14)
             plt.tight_layout()
             
             return fig
@@ -1709,7 +1969,7 @@ class ScientificDataAnalyzer:
             return None
     
     def plot_17_journal_impact(self):
-        """17. Влияние журналов"""
+        """17. Journal impact analysis"""
         try:
             required_cols = ['Full journal Name', 'count', 'Annual cit counts (CR)']
             if not all(col in self.df_processed.columns for col in required_cols):
@@ -1719,7 +1979,7 @@ class ScientificDataAnalyzer:
             if len(valid_data) == 0:
                 return None
             
-            # Агрегируем по журналам
+            # Aggregate by journal
             journal_stats = valid_data.groupby('Full journal Name').agg({
                 'count': ['mean', 'median', 'std', 'size'],
                 'Annual cit counts (CR)': 'mean',
@@ -1729,21 +1989,21 @@ class ScientificDataAnalyzer:
             journal_stats.columns = ['mean_attention', 'median_attention', 'std_attention',
                                    'num_papers', 'mean_citations', 'mean_references']
             
-            # Фильтруем журналы с достаточным количеством статей
+            # Filter journals with sufficient papers
             journal_stats = journal_stats[journal_stats['num_papers'] >= 3]
             journal_stats = journal_stats.sort_values('mean_attention', ascending=False)
             
-            # Сохраняем данные
+            # Save data
             self.plot_data['17_journal_impact'] = journal_stats.reset_index().to_dict('records')
             
-            # Выбираем топ журналов
+            # Select top journals
             top_journals = journal_stats.head(15)
             
-            fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(16, 8))
+            fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 9), dpi=600)
             
-            # График 1: Среднее внимание
+            # Graph 1: Mean attention
             y_pos = np.arange(len(top_journals))
-            colors1 = plt.cm.Blues(np.linspace(0.4, 0.9, len(top_journals)))
+            colors1 = plt.cm.get_cmap(self.plot_settings['bar_palette'])(np.linspace(0.4, 0.9, len(top_journals)))
             
             bars1 = ax1.barh(y_pos, top_journals['mean_attention'],
                             color=colors1, edgecolor='black', alpha=0.8)
@@ -1751,24 +2011,25 @@ class ScientificDataAnalyzer:
             ax1.set_yticks(y_pos)
             journal_names = [name[:25] + '...' if len(name) > 25 else name
                             for name in top_journals.index]
-            ax1.set_yticklabels(journal_names, fontsize=9)
+            ax1.set_yticklabels(journal_names, fontsize=8)
             ax1.set_xlabel('Mean Attention per Paper', fontweight='bold')
             ax1.set_title('Top Journals by Attention', fontweight='bold')
             ax1.invert_yaxis()
             
-            # Добавляем значения
+            # Add values
             for bar, (_, row) in zip(bars1, top_journals.iterrows()):
                 width = bar.get_width()
                 info_text = f"n={int(row['num_papers'])}"
                 ax1.text(width * 1.01, bar.get_y() + bar.get_height()/2,
                         info_text, va='center', fontsize=8)
             
-            # График 2: Пузырьковая диаграмма
+            # Graph 2: Bubble chart
             scatter = ax2.scatter(top_journals['mean_citations'],
                                 top_journals['mean_attention'],
                                 s=top_journals['num_papers'] * 10,
                                 c=top_journals['mean_references'],
-                                cmap='coolwarm', alpha=0.7,
+                                cmap=self.plot_settings['scatter_palette'], 
+                                alpha=0.7,
                                 edgecolors='black', linewidth=0.5)
             
             ax2.set_xlabel('Mean Annual Citations (CR)', fontweight='bold')
@@ -1779,7 +2040,7 @@ class ScientificDataAnalyzer:
             cbar = plt.colorbar(scatter, ax=ax2)
             cbar.set_label('Mean References', fontweight='bold')
             
-            # Добавляем аннотации
+            # Add annotations
             for idx, row in top_journals.head(5).iterrows():
                 short_name = idx[:15] + '...' if len(idx) > 15 else idx
                 ax2.annotate(short_name,
@@ -1787,7 +2048,20 @@ class ScientificDataAnalyzer:
                             xytext=(5, 5), textcoords='offset points',
                             fontsize=8, alpha=0.8)
             
-            plt.suptitle('Journal Impact Analysis', fontweight='bold', fontsize=16)
+            # Legend for bubble sizes
+            legend_elements = []
+            size_values = [3, 6, 9, 12]
+            for num_papers in size_values:
+                if num_papers <= top_journals['num_papers'].max():
+                    legend_elements.append(Line2D([0], [0], marker='o', color='w',
+                                                 markerfacecolor='gray',
+                                                 markersize=np.sqrt(num_papers * 10 / 10),
+                                                 label=f'{num_papers} papers'))
+            if legend_elements:
+                ax2.legend(handles=legend_elements, title='Number of Papers',
+                          loc='lower right', fontsize=8, title_fontsize=9)
+            
+            plt.suptitle('Journal Impact Analysis', fontweight='bold', fontsize=14)
             plt.tight_layout()
             
             return fig
@@ -1796,8 +2070,133 @@ class ScientificDataAnalyzer:
             self.log_error(f"Error in plot_17_journal_impact: {str(e)}")
             return None
     
+    def plot_18_author_collaboration_network(self, top_n=30):
+        """18. Author collaboration network (NEW PLOT)"""
+        try:
+            if 'authors_list' not in self.df_processed.columns:
+                return None
+            
+            # Create graph
+            G = nx.Graph()
+            
+            for idx, row in self.df_processed.iterrows():
+                if isinstance(row['authors_list'], list) and len(row['authors_list']) >= 2:
+                    authors = [a.strip() for a in row['authors_list']]
+                    weight = row.get('count', 1)
+                    
+                    # Add nodes
+                    for author in authors:
+                        if not G.has_node(author):
+                            G.add_node(author, weight=0, papers=0)
+                        G.nodes[author]['weight'] += weight
+                        G.nodes[author]['papers'] += 1
+                    
+                    # Add edges between all pairs
+                    for i in range(len(authors)):
+                        for j in range(i+1, len(authors)):
+                            if G.has_edge(authors[i], authors[j]):
+                                G[authors[i]][authors[j]]['weight'] += weight
+                                G[authors[i]][authors[j]]['papers'] += 1
+                            else:
+                                G.add_edge(authors[i], authors[j], weight=weight, papers=1)
+            
+            if len(G.nodes()) < 3:
+                self.log_warning("Insufficient data for author collaboration network")
+                return None
+            
+            # Select top authors by degree
+            degree_dict = dict(G.degree(weight='weight'))
+            top_authors = sorted(degree_dict.items(), key=lambda x: x[1], reverse=True)[:top_n]
+            top_author_names = [author[0] for author in top_authors]
+            
+            H = G.subgraph(top_author_names)
+            
+            # Remove isolated nodes
+            isolated_nodes = [n for n in H.nodes() if H.degree(n) == 0]
+            H.remove_nodes_from(isolated_nodes)
+            
+            if len(H.nodes()) < 2:
+                self.log_warning("Insufficient connections in author network")
+                return None
+            
+            # Save data
+            self.plot_data['18_author_collaboration_network'] = {
+                'nodes': [{'author': node, 'weight': H.nodes[node]['weight'],
+                          'papers': H.nodes[node]['papers']} for node in H.nodes()],
+                'edges': [{'author1': u, 'author2': v, 'weight': H[u][v]['weight'],
+                          'papers': H[u][v]['papers']} for u, v in H.edges()]
+            }
+            
+            # Visualization
+            fig, ax = plt.subplots(figsize=(12, 9), dpi=600)
+            
+            pos = nx.spring_layout(H, k=2, seed=42)
+            
+            # Node sizes by weight
+            node_sizes = [H.nodes[n]['weight'] * 0.5 + 500 for n in H.nodes()]
+            node_colors = [H.nodes[n]['papers'] for n in H.nodes()]
+            
+            nodes = nx.draw_networkx_nodes(H, pos, node_size=node_sizes,
+                                          node_color=node_colors, 
+                                          cmap=self.plot_settings['network_palette'],
+                                          alpha=0.8, edgecolors='black', linewidths=1.5, ax=ax)
+            
+            # Edges with width by weight
+            if H.edges():
+                edge_weights = [H[u][v]['weight'] * 0.1 for u, v in H.edges()]
+                edges = nx.draw_networkx_edges(H, pos, width=edge_weights, alpha=0.5,
+                                              edge_color='gray', style='solid', ax=ax)
+            
+            # Labels (truncated if too long)
+            labels = {}
+            for node in H.nodes():
+                if len(node) > 25:
+                    labels[node] = node[:22] + '...'
+                else:
+                    labels[node] = node
+            
+            nx.draw_networkx_labels(H, pos, labels=labels, font_size=7, font_weight='bold', ax=ax)
+            
+            ax.set_title(f'Author Collaboration Network (Top {top_n} Authors by Collaboration Strength)',
+                        fontweight='bold', fontsize=14, pad=20)
+            ax.axis('off')
+            
+            # Colorbar
+            sm = plt.cm.ScalarMappable(cmap=self.plot_settings['network_palette'],
+                                      norm=plt.Normalize(vmin=min(node_colors), 
+                                                       vmax=max(node_colors)))
+            sm.set_array([])
+            cbar = plt.colorbar(sm, ax=ax, shrink=0.8, pad=0.02)
+            cbar.set_label('Number of Papers', fontweight='bold', fontsize=9)
+            
+            # Statistics
+            stats_text = f"Authors: {len(H.nodes())} | Collaborations: {len(H.edges())}"
+            ax.text(0.02, 0.02, stats_text, transform=ax.transAxes, fontsize=9,
+                   bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
+            
+            # Legend for node sizes
+            size_legend_elements = []
+            size_values = [500, 1000, 1500, 2000]
+            for size in size_values:
+                weight_value = (size - 500) / 0.5
+                if weight_value > 0:
+                    size_legend_elements.append(Line2D([0], [0], marker='o', color='w',
+                                                      markerfacecolor='gray',
+                                                      markersize=np.sqrt(size/10),
+                                                      label=f'Weight ~{weight_value:.0f}'))
+            if size_legend_elements:
+                ax.legend(handles=size_legend_elements, title='Collaboration Weight',
+                         loc='upper right', fontsize=8, title_fontsize=9)
+            
+            plt.tight_layout()
+            return fig
+            
+        except Exception as e:
+            self.log_error(f"Error in plot_18_author_collaboration_network: {str(e)}")
+            return None
+    
     def plot_18_18_1_affiliation_network(self):
-        """18.1 Сеть аффилиаций (топ 20)"""
+        """18.1 Affiliation network (Top 20)"""
         try:
             return self._plot_affiliation_network_impl(20, "1")
         except Exception as e:
@@ -1805,7 +2204,7 @@ class ScientificDataAnalyzer:
             return None
     
     def plot_18_18_2_affiliation_network(self):
-        """18.2 Сеть аффилиаций (топ 30)"""
+        """18.2 Affiliation network (Top 30)"""
         try:
             return self._plot_affiliation_network_impl(30, "2")
         except Exception as e:
@@ -1813,7 +2212,7 @@ class ScientificDataAnalyzer:
             return None
     
     def plot_18_18_3_affiliation_network(self):
-        """18.3 Сеть аффилиаций (топ 50)"""
+        """18.3 Affiliation network (Top 50)"""
         try:
             return self._plot_affiliation_network_impl(50, "3")
         except Exception as e:
@@ -1821,12 +2220,12 @@ class ScientificDataAnalyzer:
             return None
     
     def _plot_affiliation_network_impl(self, top_n, suffix):
-        """Общая реализация сети аффилиаций"""
+        """Implementation of affiliation network"""
         try:
             if 'affiliations_list' not in self.df_processed.columns:
                 return None
             
-            # Создаем граф
+            # Create graph
             G = nx.Graph()
             
             for idx, row in self.df_processed.iterrows():
@@ -1852,14 +2251,22 @@ class ScientificDataAnalyzer:
                 self.log_warning("Insufficient data for affiliation network")
                 return None
             
-            # Выбираем топ аффилиации
+            # Select top affiliations
             degree_dict = dict(G.degree(weight='weight'))
             top_nodes = sorted(degree_dict.items(), key=lambda x: x[1], reverse=True)[:top_n]
             top_node_names = [node[0] for node in top_nodes]
             
             H = G.subgraph(top_node_names)
             
-            # Сохраняем данные
+            # Remove isolated nodes
+            isolated_nodes = [n for n in H.nodes() if H.degree(n) == 0]
+            H.remove_nodes_from(isolated_nodes)
+            
+            if len(H.nodes()) < 2:
+                self.log_warning("Insufficient connections in affiliation network")
+                return None
+            
+            # Save data
             self.plot_data[f'18_18_{suffix}_affiliation_network'] = {
                 'nodes': [{'affiliation': node, 'weight': H.nodes[node]['weight'],
                           'papers': H.nodes[node]['papers']} for node in H.nodes()],
@@ -1867,7 +2274,7 @@ class ScientificDataAnalyzer:
                           'papers': H[u][v]['papers']} for u, v in H.edges()]
             }
             
-            fig, ax = plt.subplots(figsize=(16, 12))
+            fig, ax = plt.subplots(figsize=(12, 9), dpi=600)
             
             pos = nx.spring_layout(H, k=3, seed=42)
             
@@ -1875,7 +2282,8 @@ class ScientificDataAnalyzer:
             node_colors = [H.nodes[n]['papers'] for n in H.nodes()]
             
             nodes = nx.draw_networkx_nodes(H, pos, node_size=node_sizes,
-                                          node_color=node_colors, cmap='Blues',
+                                          node_color=node_colors, 
+                                          cmap=self.plot_settings['network_palette'],
                                           alpha=0.8, edgecolors='black', linewidths=1.5, ax=ax)
             
             if H.edges():
@@ -1883,7 +2291,7 @@ class ScientificDataAnalyzer:
                 edges = nx.draw_networkx_edges(H, pos, width=edge_weights, alpha=0.4,
                                               edge_color='gray', style='solid', ax=ax)
             
-            # Подписи с переносом строк
+            # Labels with line breaks
             labels = {}
             for node in H.nodes():
                 words = node.split()
@@ -1893,19 +2301,24 @@ class ScientificDataAnalyzer:
                 else:
                     labels[node] = node
             
-            nx.draw_networkx_labels(H, pos, labels=labels, font_size=8, font_weight='bold', ax=ax)
+            nx.draw_networkx_labels(H, pos, labels=labels, font_size=7, font_weight='bold', ax=ax)
             
             ax.set_title(f'Top {top_n} Affiliation Collaboration Network (Version {suffix})', 
-                        fontweight='bold', fontsize=16)
+                        fontweight='bold', fontsize=14)
             ax.axis('off')
             
-            # Цветовая шкала
-            sm = plt.cm.ScalarMappable(cmap='Blues',
+            # Colorbar
+            sm = plt.cm.ScalarMappable(cmap=self.plot_settings['network_palette'],
                                       norm=plt.Normalize(vmin=min(node_colors),
                                                        vmax=max(node_colors)))
             sm.set_array([])
             cbar = plt.colorbar(sm, ax=ax, shrink=0.8, pad=0.02)
-            cbar.set_label('Number of Papers', fontweight='bold', fontsize=10)
+            cbar.set_label('Number of Papers', fontweight='bold', fontsize=9)
+            
+            # Statistics
+            stats_text = f"Affiliations: {len(H.nodes())} | Collaborations: {len(H.edges())}"
+            ax.text(0.02, 0.02, stats_text, transform=ax.transAxes, fontsize=9,
+                   bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
             
             plt.tight_layout()
             return fig
@@ -1915,7 +2328,7 @@ class ScientificDataAnalyzer:
             return None
     
     def plot_19_hierarchical_sankey(self):
-        """19. Иерархическая диаграмма Санки: Domain → Field → Subfield → Topic"""
+        """19. Hierarchical Sankey diagram: Domain → Field → Subfield → Topic"""
         try:
             required_cols = ['Domain', 'Field', 'Subfield', 'Topic', 'max_citations']
             available_cols = [col for col in required_cols if col in self.df_processed.columns]
@@ -1927,7 +2340,7 @@ class ScientificDataAnalyzer:
             if len(valid_data) < 10:
                 return None
             
-            # Создаем иерархические связи
+            # Create hierarchical links
             links = []
             nodes = []
             node_indices = {}
@@ -1938,7 +2351,7 @@ class ScientificDataAnalyzer:
                     nodes.append(name)
                 return node_indices[name]
             
-            # Агрегируем веса (суммарные цитирования)
+            # Aggregate weights (total citations)
             hierarchy_data = valid_data.groupby(['Domain', 'Field', 'Subfield', 'Topic']).agg({
                 'max_citations': 'sum',
                 'count': 'size'
@@ -1954,7 +2367,7 @@ class ScientificDataAnalyzer:
                 if weight <= 0:
                     continue
                 
-                # Добавляем связи
+                # Add connections
                 domain_idx = add_node(domain)
                 field_idx = add_node(field)
                 subfield_idx = add_node(subfield)
@@ -1964,14 +2377,14 @@ class ScientificDataAnalyzer:
                 links.append({'source': field_idx, 'target': subfield_idx, 'value': weight})
                 links.append({'source': subfield_idx, 'target': topic_idx, 'value': weight})
             
-            # Сохраняем данные
+            # Save data
             self.plot_data['19_hierarchical_sankey'] = {
                 'nodes': nodes,
                 'links': links,
                 'total_weight': sum([l['value'] for l in links])
             }
             
-            # Создаем диаграмму Санки с plotly (лучше для интерактивности)
+            # Create Sankey diagram with plotly
             fig = go.Figure(data=[go.Sankey(
                 node=dict(
                     pad=15,
@@ -2001,9 +2414,9 @@ class ScientificDataAnalyzer:
             return None
     
     def plot_20_multidimensional_scaling(self):
-        """20. Многомерное шкалирование важных предикторов"""
+        """20. Multidimensional scaling of important predictors"""
         try:
-            # Выбираем ключевые предикторы
+            # Select key predictors
             predictors = ['author count', 'references_count', 'num_countries',
                          'Annual cit counts (CR)', 'article_age', 'normalized_attention']
             
@@ -2012,13 +2425,13 @@ class ScientificDataAnalyzer:
             if len(available_predictors) < 3:
                 return None
             
-            # Готовим данные
+            # Prepare data
             analysis_data = self.df_processed[available_predictors + ['count']].dropna()
             
             if len(analysis_data) < 20:
                 return None
             
-            # Стандартизация
+            # Standardization
             scaler = StandardScaler()
             scaled_data = scaler.fit_transform(analysis_data[available_predictors])
             
@@ -2026,7 +2439,7 @@ class ScientificDataAnalyzer:
             pca = PCA(n_components=2)
             pca_result = pca.fit_transform(scaled_data)
             
-            # Сохраняем данные
+            # Save data
             self.plot_data['20_mds_analysis'] = {
                 'explained_variance': pca.explained_variance_ratio_.tolist(),
                 'components': pca.components_.tolist(),
@@ -2034,11 +2447,12 @@ class ScientificDataAnalyzer:
                 'predictors': available_predictors
             }
             
-            fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(16, 7))
+            fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 9), dpi=600)
             
-            # График 1: PCA scatter plot
+            # Graph 1: PCA scatter plot
             scatter = ax1.scatter(pca_result[:, 0], pca_result[:, 1],
-                                 c=analysis_data['count'], cmap='viridis',
+                                 c=analysis_data['count'], 
+                                 cmap=self.plot_settings['scatter_palette'],
                                  alpha=0.6, s=30, edgecolors='black', linewidth=0.5)
             
             ax1.set_xlabel(f'PC1 ({pca.explained_variance_ratio_[0]*100:.1f}% variance)', fontweight='bold')
@@ -2049,16 +2463,16 @@ class ScientificDataAnalyzer:
             cbar = plt.colorbar(scatter, ax=ax1)
             cbar.set_label('Local Mentions (count)', fontweight='bold')
             
-            # График 2: Важность признаков
+            # Graph 2: Predictor loadings
             loadings = pca.components_.T * np.sqrt(pca.explained_variance_)
             
             for i, predictor in enumerate(available_predictors):
                 ax2.arrow(0, 0, loadings[i, 0], loadings[i, 1],
                          color='red', alpha=0.5, head_width=0.05)
                 ax2.text(loadings[i, 0] * 1.15, loadings[i, 1] * 1.15,
-                        predictor, color='red', fontsize=10, fontweight='bold')
+                        predictor, color='red', fontsize=9, fontweight='bold')
             
-            # Окружность корреляций
+            # Correlation circle
             circle = plt.Circle((0, 0), 1, fill=False, color='blue', alpha=0.3)
             ax2.add_artist(circle)
             
@@ -2071,7 +2485,7 @@ class ScientificDataAnalyzer:
             ax2.axhline(y=0, color='gray', linestyle='--', alpha=0.5)
             ax2.axvline(x=0, color='gray', linestyle='--', alpha=0.5)
             
-            plt.suptitle('Multidimensional Analysis of Research Predictors', fontweight='bold', fontsize=16)
+            plt.suptitle('Multidimensional Analysis of Research Predictors', fontweight='bold', fontsize=14)
             plt.tight_layout()
             
             return fig
@@ -2081,12 +2495,12 @@ class ScientificDataAnalyzer:
             return None
     
     def plot_21_concept_network_weighted(self):
-        """21. Сеть концептов с весами по влиянию"""
+        """21. Weighted concept network by influence"""
         try:
             if 'concepts_list' not in self.df_processed.columns or 'max_citations' not in self.df_processed.columns:
                 return None
             
-            # Собираем топ концепты по встречаемости
+            # Collect top concepts by frequency
             all_concepts = []
             for concepts in self.df_processed['concepts_list']:
                 if isinstance(concepts, list):
@@ -2098,12 +2512,11 @@ class ScientificDataAnalyzer:
             concept_counts = pd.Series(all_concepts).value_counts()
             top_concepts = concept_counts.head(25).index.tolist()
             
-            # Создаем взвешенный граф
+            # Create weighted graph
             G = nx.Graph()
             
-            # Добавляем узлы с весами по цитированиям
+            # Add nodes with citation weights
             for concept in top_concepts:
-                # Находим все статьи с этим концептом
                 concept_papers = []
                 for idx, row in self.df_processed.iterrows():
                     if isinstance(row['concepts_list'], list) and concept in row['concepts_list']:
@@ -2112,7 +2525,7 @@ class ScientificDataAnalyzer:
                 total_citations = sum(concept_papers)
                 G.add_node(concept, citations=total_citations, papers=len(concept_papers))
             
-            # Добавляем ребра с весами по совместной встречаемости
+            # Add edges with co-occurrence weights
             for idx, row in self.df_processed.iterrows():
                 if isinstance(row['concepts_list'], list):
                     concepts_in_paper = [c.strip() for c in row['concepts_list'] if c.strip() in top_concepts]
@@ -2126,7 +2539,7 @@ class ScientificDataAnalyzer:
                             else:
                                 G.add_edge(c1, c2, weight=weight)
             
-            # Сохраняем данные
+            # Save data
             self.plot_data['21_concept_network_weighted'] = {
                 'nodes': [{'concept': node, 'citations': G.nodes[node]['citations'],
                           'papers': G.nodes[node]['papers']} for node in G.nodes()],
@@ -2134,38 +2547,53 @@ class ScientificDataAnalyzer:
                          for u, v in G.edges()]
             }
             
-            # Визуализация
-            fig, ax = plt.subplots(figsize=(16, 12))
+            # Visualization
+            fig, ax = plt.subplots(figsize=(12, 9), dpi=600)
             
             pos = nx.spring_layout(G, k=2, seed=42)
             
-            # Размер узлов по цитированиям
+            # Node sizes by citations
             node_sizes = [G.nodes[n]['citations'] * 0.2 + 500 for n in G.nodes()]
             node_colors = [G.nodes[n]['papers'] for n in G.nodes()]
             
             nodes = nx.draw_networkx_nodes(G, pos, node_size=node_sizes,
-                                          node_color=node_colors, cmap='RdYlGn',
+                                          node_color=node_colors, 
+                                          cmap=self.plot_settings['network_palette'],
                                           alpha=0.8, edgecolors='black', linewidths=1.5, ax=ax)
             
-            # Ребра с толщиной по весу
+            # Edges with width by weight
             if G.edges():
                 edge_weights = [G[u][v]['weight'] * 0.01 for u, v in G.edges()]
                 edges = nx.draw_networkx_edges(G, pos, width=edge_weights, alpha=0.5,
                                               edge_color='gray', style='solid', ax=ax)
             
-            # Подписи
-            nx.draw_networkx_labels(G, pos, font_size=9, font_weight='bold', ax=ax)
+            # Labels
+            nx.draw_networkx_labels(G, pos, font_size=8, font_weight='bold', ax=ax)
             
-            ax.set_title('Concept Network with Citation Impact', fontweight='bold', fontsize=16)
+            ax.set_title('Concept Network with Citation Impact', fontweight='bold', fontsize=14)
             ax.axis('off')
             
-            # Цветовая шкала
-            sm = plt.cm.ScalarMappable(cmap='RdYlGn',
+            # Colorbar
+            sm = plt.cm.ScalarMappable(cmap=self.plot_settings['network_palette'],
                                       norm=plt.Normalize(vmin=min(node_colors),
                                                        vmax=max(node_colors)))
             sm.set_array([])
             cbar = plt.colorbar(sm, ax=ax, shrink=0.8, pad=0.02)
-            cbar.set_label('Number of Papers', fontweight='bold', fontsize=10)
+            cbar.set_label('Number of Papers', fontweight='bold', fontsize=9)
+            
+            # Legend for node sizes
+            size_legend_elements = []
+            size_values = [500, 1000, 1500, 2000]
+            for size in size_values:
+                citation_value = (size - 500) / 0.2
+                if citation_value > 0:
+                    size_legend_elements.append(Line2D([0], [0], marker='o', color='w',
+                                                      markerfacecolor='gray',
+                                                      markersize=np.sqrt(size/10),
+                                                      label=f'Citations ~{citation_value:.0f}'))
+            if size_legend_elements:
+                ax.legend(handles=size_legend_elements, title='Citation Impact',
+                         loc='upper right', fontsize=8, title_fontsize=9)
             
             plt.tight_layout()
             return fig
@@ -2175,13 +2603,13 @@ class ScientificDataAnalyzer:
             return None
     
     def generate_all_plots(self, selected_plots=None):
-        """Генерация всех графиков с прогресс-баром"""
+        """Generate all plots with progress bar"""
         self.all_figures = {}
         self.plot_data = {}
         self.errors = []
         self.warnings = []
         
-        # Обновленный список всех функций графиков (23 графика)
+        # List of all plot functions
         plot_functions = [
             ("1_distribution", "1. Distribution of Attention", self.plot_1_distribution_attention),
             ("2_country_network", "2. Country Collaboration Network", self.plot_2_country_collaboration_network),
@@ -2203,15 +2631,16 @@ class ScientificDataAnalyzer:
             ("15_cumulative_influence", "16. Cumulative Influence", self.plot_15_cumulative_influence),
             ("16_references_impact", "17. References vs Impact", self.plot_16_references_vs_impact),
             ("17_journal_impact", "18. Journal Impact", self.plot_17_journal_impact),
-            ("18_18_1_affiliation_network", "19.1 Affiliation Network (Top 20)", self.plot_18_18_1_affiliation_network),
-            ("18_18_2_affiliation_network", "19.2 Affiliation Network (Top 30)", self.plot_18_18_2_affiliation_network),
-            ("18_18_3_affiliation_network", "19.3 Affiliation Network (Top 50)", self.plot_18_18_3_affiliation_network),
-            ("19_hierarchical_sankey", "20. Hierarchical Sankey Diagram", self.plot_19_hierarchical_sankey),
-            ("20_mds", "21. Multidimensional Scaling", self.plot_20_multidimensional_scaling),
-            ("21_concept_network_weighted", "22. Weighted Concept Network", self.plot_21_concept_network_weighted)
+            ("18_author_network", "19. Author Collaboration Network", lambda: self.plot_18_author_collaboration_network(30)),
+            ("18_18_1_affiliation_network", "20.1 Affiliation Network (Top 20)", self.plot_18_18_1_affiliation_network),
+            ("18_18_2_affiliation_network", "20.2 Affiliation Network (Top 30)", self.plot_18_18_2_affiliation_network),
+            ("18_18_3_affiliation_network", "20.3 Affiliation Network (Top 50)", self.plot_18_18_3_affiliation_network),
+            ("19_hierarchical_sankey", "21. Hierarchical Sankey Diagram", self.plot_19_hierarchical_sankey),
+            ("20_mds", "22. Multidimensional Scaling", self.plot_20_multidimensional_scaling),
+            ("21_concept_network_weighted", "23. Weighted Concept Network", self.plot_21_concept_network_weighted)
         ]
         
-        # Если выбраны определенные графики
+        # If specific plots selected
         if selected_plots:
             plot_functions = [pf for pf in plot_functions if pf[0] in selected_plots]
         
@@ -2240,16 +2669,16 @@ class ScientificDataAnalyzer:
         return self.all_figures
     
     def create_excel_report(self):
-        """Создает Excel файл с данными для всех графиков"""
+        """Create Excel file with data for all plots"""
         if not self.plot_data:
             st.warning("⚠️ No plot data available for Excel report")
             return None
         
-        # Создаем Excel writer
+        # Create Excel writer
         excel_buffer = io.BytesIO()
         
         with pd.ExcelWriter(excel_buffer, engine='openpyxl') as writer:
-            # 1. Основная статистика
+            # 1. Basic statistics
             if self.df_processed is not None:
                 basic_stats = pd.DataFrame({
                     'Metric': [
@@ -2273,7 +2702,7 @@ class ScientificDataAnalyzer:
                 })
                 basic_stats.to_excel(writer, sheet_name='Basic_Statistics', index=False)
             
-            # 2. Данные для каждого графика
+            # 2. Data for each plot
             for plot_name, data in self.plot_data.items():
                 sheet_name = f"Plot_{plot_name}"
                 if len(sheet_name) > 31:
@@ -2301,7 +2730,7 @@ class ScientificDataAnalyzer:
                 except Exception as e:
                     st.warning(f"   ⚠️  Could not save data for {plot_name}: {str(e)[:50]}")
             
-            # 3. Ошибки и предупреждения
+            # 3. Errors and warnings
             if self.errors:
                 errors_df = pd.DataFrame(self.errors)
                 errors_df.to_excel(writer, sheet_name='Errors', index=False)
@@ -2310,14 +2739,14 @@ class ScientificDataAnalyzer:
                 warnings_df = pd.DataFrame(self.warnings)
                 warnings_df.to_excel(writer, sheet_name='Warnings', index=False)
             
-            # 4. Лист с объяснением терминов и формул
+            # 4. Terminology and formulas sheet
             self._add_terminology_sheet(writer)
         
         excel_buffer.seek(0)
         return excel_buffer
     
     def _add_terminology_sheet(self, writer):
-        """Добавляет лист с объяснением терминов и формул"""
+        """Add terminology and formulas sheet"""
         terminology_data = {
             'Term': [
                 'PC1 (Principal Component 1)',
@@ -2363,7 +2792,7 @@ class ScientificDataAnalyzer:
                 'normalized_attention = count / max(1, current_year - year)',
                 'Directly from "count" column in input data',
                 'total_mentions = Σ count_i for all papers i',
-                'article_age = 2024 - year (assuming current year 2024)',
+                'article_age = 2026 - year (assuming current year 2026)',
                 'max_citations = max(CR_citations, OA_citations)',
                 'max_annual_citations = max(CR_annual, OA_annual)',
                 'Annual_cit_CR = Citation counts (CR) / max(1, article_age)',
@@ -2401,34 +2830,45 @@ class ScientificDataAnalyzer:
         terminology_df.to_excel(writer, sheet_name='Terminology_Formulas', index=False)
     
     def save_all_to_zip(self, include_excel=True):
-        """Сохраняет все графики и отчеты в ZIP архив"""
+        """Save all plots and reports to ZIP archive"""
         if not self.all_figures:
             st.error("❌ No plots to save!")
             return None
         
-        # Создаем ZIP архив
+        # Create ZIP archive
         zip_buffer = io.BytesIO()
         
         with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
-            # 1. Сохраняем графики
+            # 1. Save plots
             for i, (name, fig) in enumerate(self.all_figures.items()):
                 img_buffer = io.BytesIO()
-                fig.savefig(img_buffer, format='png', dpi=300,
-                          bbox_inches='tight', facecolor='white',
-                          edgecolor='black')
+                
+                # Check if it's a plotly figure
+                if hasattr(fig, 'write_image'):
+                    # Plotly figure
+                    import plotly.io as pio
+                    pio.write_image(fig, img_buffer, format='png', width=1200, height=900, scale=2)
+                else:
+                    # Matplotlib figure
+                    fig.savefig(img_buffer, format='png', dpi=600,
+                              bbox_inches='tight', facecolor='white',
+                              edgecolor='black')
                 img_buffer.seek(0)
                 
                 filename = f"plot_{i+1:02d}_{name}.png"
                 zip_file.writestr(filename, img_buffer.read())
-                plt.close(fig)
+                
+                # Close matplotlib figures
+                if not hasattr(fig, 'write_image'):
+                    plt.close(fig)
             
-            # 2. Сохраняем Excel отчет
+            # 2. Save Excel report
             if include_excel:
                 excel_buffer = self.create_excel_report()
                 if excel_buffer:
                     zip_file.writestr("plot_data.xlsx", excel_buffer.read())
             
-            # 3. Сохраняем метаданные
+            # 3. Save metadata
             metadata = {
                 'generated_date': datetime.now().isoformat(),
                 'total_plots': len(self.all_figures),
@@ -2438,7 +2878,8 @@ class ScientificDataAnalyzer:
                     'total_mentions': int(self.df_processed['count'].sum()) if self.df_processed is not None and 'count' in self.df_processed.columns else 0
                 },
                 'errors_count': len(self.errors),
-                'warnings_count': len(self.warnings)
+                'warnings_count': len(self.warnings),
+                'plot_settings': self.plot_settings
             }
             
             zip_file.writestr('metadata.json', json.dumps(metadata, indent=2))
@@ -2447,18 +2888,200 @@ class ScientificDataAnalyzer:
         return zip_buffer
 
 # ============================================================================
-# ФУНКЦИИ ДЛЯ STREAMLIT ИНТЕРФЕЙСА
+# STREAMLIT APPLICATION WITH MODULAR 4-STAGE INTERFACE
 # ============================================================================
 
 def main():
-    """Основная функция Streamlit приложения"""
+    """Main Streamlit application function"""
     
-    # Заголовок
-    st.title("📊 Scientific Data Visualization Dashboard")
+    # Load custom CSS
+    load_custom_css()
+    
+    # Initialize session state
+    if 'current_stage' not in st.session_state:
+        st.session_state.current_stage = 1  # 1=Upload, 2=Settings, 3=Visualization, 4=Export
+    if 'analyzer' not in st.session_state:
+        st.session_state.analyzer = ScientificDataAnalyzer()
+    if 'plots_generated' not in st.session_state:
+        st.session_state.plots_generated = False
+    if 'selected_plots' not in st.session_state:
+        st.session_state.selected_plots = None
+    if 'sample_data_loaded' not in st.session_state:
+        st.session_state.sample_data_loaded = ''
+    
+    # Header
+    st.markdown("""
+    <div class="main-header">
+        <h1>📊 Scientific Data Visualization Dashboard</h1>
+        <p>Advanced Multi-Stage Analysis Tool for Research Metrics and Collaboration Networks</p>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    # Sidebar navigation
+    with st.sidebar:
+        st.markdown("### 🧭 Navigation")
+        
+        # Stage indicators
+        stages = ["1. Data Upload", "2. Plot Selection", "3. Visualization", "4. Export"]
+        current_stage = st.session_state.current_stage - 1
+        
+        for i, stage in enumerate(stages):
+            if i == current_stage:
+                st.markdown(f"**→ {stage}**")
+            else:
+                if i < current_stage:
+                    if st.button(f"✓ {stage}", key=f"nav_{i}", use_container_width=True):
+                        st.session_state.current_stage = i + 1
+                        st.rerun()
+                else:
+                    st.markdown(f"   {stage}")
+        
+        st.markdown("---")
+        
+        # Data information (if loaded)
+        if st.session_state.analyzer.df_processed is not None:
+            st.markdown("### 📈 Data Summary")
+            col1, col2 = st.columns(2)
+            with col1:
+                st.metric("Papers", len(st.session_state.analyzer.df_processed))
+            with col2:
+                if 'count' in st.session_state.analyzer.df_processed.columns:
+                    st.metric("Total Mentions", 
+                             f"{int(st.session_state.analyzer.df_processed['count'].sum()):,}")
+            
+            if 'year' in st.session_state.analyzer.df_processed.columns:
+                st.metric("Year Range", 
+                         f"{int(st.session_state.analyzer.df_processed['year'].min())}-{int(st.session_state.analyzer.df_processed['year'].max())}")
+        
+        st.markdown("---")
+        st.info("💡 **Tips:**\n• Use TSV format (tab-separated)\n• First row must be headers\n• Required: doi, Title, year, count")
+    
+    # Main content based on current stage
+    if st.session_state.current_stage == 1:
+        stage1_data_upload()
+    elif st.session_state.current_stage == 2:
+        stage2_plot_selection()
+    elif st.session_state.current_stage == 3:
+        stage3_visualization()
+    elif st.session_state.current_stage == 4:
+        stage4_export()
+
+def stage1_data_upload():
+    """Stage 1: Data upload and preprocessing"""
+    st.header("📋 Stage 1: Data Upload")
+    
+    # Navigation buttons
+    col1, col2, col3 = st.columns([1, 1, 1])
+    with col2:
+        if st.button("🗑️ Clear All Data", use_container_width=True):
+            st.session_state.analyzer = ScientificDataAnalyzer()
+            st.session_state.plots_generated = False
+            st.session_state.selected_plots = None
+            st.session_state.sample_data_loaded = ''
+            st.rerun()
+    
+    st.markdown('<div class="custom-card">', unsafe_allow_html=True)
+    
+    # Data input
+    data_input = st.text_area(
+        "📝 Paste your TSV data here",
+        value=st.session_state.sample_data_loaded,
+        height=300,
+        help="First row should contain column headers. Columns should be tab-separated."
+    )
+    
+    # Sample data button
+    sample_data = """doi\tpublication_date\tTitle\tauthors\tORCID ID 1; ORCID ID 2... ORCID ID last\tauthor count\taffiliations {aff 1; aff 2... aff last}\tcountries {country 1; ... country last}\tFull journal Name\tyear\tVolume\tPages (or article number)\tCitation counts (CR)\tCitation counts (OA)\tAnnual cit counts (CR)\tAnnual cit counts (OA)\treferences_count\tcount\tTopic\tSubfield\tField\tDomain\tConcepts
+10.1021/acs.chemrev.6b00284\t2016-11-09\tStrategies for Carbon and Sulfur Tolerant Solid Oxide Fuel Cell Materials, Incorporating Lessons from Heterogeneous Catalysis\tPaul Boldrin; Enrique Ruiz-Trejo; Joshua Mermelstein; José Miguel Bermúdez Menéndez; Tomás Ramı́rez Reina; Nigel P. Brandon\thttps://orcid.org/0000-0003-0058-6876; https://orcid.org/0000-0001-5560-5750; https://orcid.org/0000-0001-7211-2958; https://orcid.org/0000-0001-9693-5107; https://orcid.org/0000-0003-2230-8666\t6\tUniversity of Surrey; Imperial College London; Boeing (United States)\tUS; GB\tChemical Reviews\t2016\t116\t13633-13684\t289\t296\t26.27\t26.91\t465\t5\tAdvancements in Solid Oxide Fuel Cells\tChemistry\tCarbon fibers\tCatalysis\tSulfur; Chemistry; Carbon fibers; Catalysis; Oxide; Solid oxide fuel cell; Fuel cells; Nanotechnology; Environmental chemistry; Chemical engineering; Organic chemistry; Materials science; Engineering; Composite number; Physical chemistry; Composite material; Anode; Electrode
+10.1126/science.aab3987\t2015-07-23\tReadily processed protonic ceramic fuel cells with high performance at low temperatures\tChuancheng Duan; Jianhua Tong; Meng Shang; Stefan Nikodemski; Michael Sanders; Sandrine Ricote; Ali Almansoori; Ryan O'Hayre\thttps://orcid.org/0000-0002-1826-1415; https://orcid.org/0000-0002-0684-1658; https://orcid.org/0000-0001-6366-5219; https://orcid.org/0000-0001-7565-0284; https://orcid.org/0000-0002-0789-5105; https://orcid.org/0000-0003-3762-3052\t8\tAmerican Petroleum Institute; Colorado School of Mines\tUS\tScience\t2015\t349\t1321-1326\t1325\t1352\t110.42\t112.67\t91\t5\tAdvancements in Solid Oxide Fuel Cells\tOxide\tFuel cells\tMaterials science\tCeramic; Oxide; Fuel cells; Materials science; Methane; Electrolyte; Chemical engineering; Cathode; Ion; Solid oxide fuel cell; Chemistry; Composite material; Electrode; Metallurgy; Organic chemistry; Engineering; Physical chemistry"""
+    
+    if st.button("📋 Load Sample Data", use_container_width=True):
+        st.session_state.sample_data_loaded = sample_data
+        st.rerun()
+    
+    st.markdown('</div>', unsafe_allow_html=True)
+    
+    # Load button
+    col1, col2 = st.columns([1, 1])
+    with col1:
+        if st.button("📥 Load Data", type="primary", use_container_width=True):
+            if data_input.strip():
+                with st.spinner("Processing data..."):
+                    result = st.session_state.analyzer.parse_data(data_input)
+                    if result is not None:
+                        st.success("✅ Data successfully loaded!")
+                        st.session_state.plots_generated = False
+                    else:
+                        st.error("❌ Failed to parse data. Please check format.")
+            else:
+                st.error("❌ Please paste data first")
+    
+    with col2:
+        if st.button("⬅️ Reset", use_container_width=True):
+            st.session_state.analyzer = ScientificDataAnalyzer()
+            st.session_state.plots_generated = False
+            st.session_state.selected_plots = None
+            st.session_state.sample_data_loaded = ''
+            st.rerun()
+    
+    # Display data info if loaded
+    if st.session_state.analyzer.df_processed is not None:
+        st.markdown("---")
+        st.subheader("📊 Data Preview")
+        
+        # Metrics row
+        df = st.session_state.analyzer.df_processed
+        col1, col2, col3, col4 = st.columns(4)
+        with col1:
+            st.metric("Total Papers", len(df))
+        with col2:
+            if 'year' in df.columns:
+                st.metric("Year Range", f"{int(df['year'].min())}-{int(df['year'].max())}")
+        with col3:
+            if 'count' in df.columns:
+                st.metric("Total Mentions", f"{int(df['count'].sum()):,}")
+        with col4:
+            if 'max_citations' in df.columns:
+                st.metric("Mean Max Citations", f"{df['max_citations'].mean():.1f}")
+        
+        with st.expander("🔍 View Data Table"):
+            st.dataframe(df.head(10))
+        
+        # Navigation to next stage
+        st.markdown("---")
+        if st.button("➡️ Proceed to Plot Selection", type="primary", use_container_width=True):
+            st.session_state.current_stage = 2
+            st.rerun()
+
+def stage2_plot_selection():
+    """Stage 2: Plot selection and settings configuration"""
+    st.header("🎨 Stage 2: Plot Selection & Settings")
+    
+    if st.session_state.analyzer.df_processed is None:
+        st.warning("⚠️ No data loaded. Please go back to Stage 1 and upload data first.")
+        if st.button("⬅️ Back to Data Upload"):
+            st.session_state.current_stage = 1
+            st.rerun()
+        return
+    
+    # Navigation buttons
+    col1, col2 = st.columns([1, 1])
+    with col1:
+        if st.button("⬅️ Back to Data Upload", use_container_width=True):
+            st.session_state.current_stage = 1
+            st.rerun()
+    with col2:
+        if st.button("🏠 Back to Start", use_container_width=True):
+            st.session_state.current_stage = 1
+            st.session_state.analyzer = ScientificDataAnalyzer()
+            st.session_state.plots_generated = False
+            st.session_state.selected_plots = None
+            st.rerun()
+    
     st.markdown("---")
     
-    # Определить all_plots здесь, в начале функции
-    ALL_PLOTS = [
+    # All plots list
+    all_plots = [
         ("1_distribution", "1. Distribution of Attention"),
         ("2_country_network", "2. Country Collaboration Network"),
         ("3_internationality", "3. Internationality vs Citations"),
@@ -2479,128 +3102,314 @@ def main():
         ("15_cumulative_influence", "16. Cumulative Influence"),
         ("16_references_impact", "17. References vs Impact"),
         ("17_journal_impact", "18. Journal Impact"),
-        ("18_18_1_affiliation_network", "19.1 Affiliation Network (Top 20)"),
-        ("18_18_2_affiliation_network", "19.2 Affiliation Network (Top 30)"),
-        ("18_18_3_affiliation_network", "19.3 Affiliation Network (Top 50)"),
-        ("19_hierarchical_sankey", "20. Hierarchical Sankey Diagram"),
-        ("20_mds", "21. Multidimensional Scaling"),
-        ("21_concept_network_weighted", "22. Weighted Concept Network")
+        ("18_author_network", "19. Author Collaboration Network"),
+        ("18_18_1_affiliation_network", "20.1 Affiliation Network (Top 20)"),
+        ("18_18_2_affiliation_network", "20.2 Affiliation Network (Top 30)"),
+        ("18_18_3_affiliation_network", "20.3 Affiliation Network (Top 50)"),
+        ("19_hierarchical_sankey", "21. Hierarchical Sankey Diagram"),
+        ("20_mds", "22. Multidimensional Scaling"),
+        ("21_concept_network_weighted", "23. Weighted Concept Network")
     ]
     
-    # Инициализация состояния сессии
-    if 'analyzer' not in st.session_state:
-        st.session_state.analyzer = ScientificDataAnalyzer()
+    # Plot selection section
+    st.subheader("📊 Select Plots to Generate")
     
-    if 'plots_generated' not in st.session_state:
-        st.session_state.plots_generated = False
-    
-    # Боковая панель
-    with st.sidebar:
-        st.header("⚙️ Настройки")
-        
-        # Меню навигации
-        selected = option_menu(
-            menu_title="Меню",
-            options=["📋 Загрузка данных", "📊 Визуализация", "📥 Скачивание"],
-            icons=["upload", "bar-chart", "download"],
-            menu_icon="cast",
-            default_index=0,
-            styles={
-                "container": {"padding": "5px", "background-color": "#f0f2f6"},
-                "icon": {"color": "orange", "font-size": "18px"},
-                "nav-link": {"font-size": "14px", "text-align": "left", "margin": "2px"},
-                "nav-link-selected": {"background-color": "#2E86AB"},
-            }
-        )
-        
-        st.markdown("---")
-        
-        # Пример данных
-        st.subheader("📚 Пример данных")
-        sample_data = """doi	publication_date	Title	authors	ORCID ID 1; ORCID ID 2... ORCID ID last	author count	affiliations {aff 1; aff 2... aff last}	countries {country 1; ... country last}	Full journal Name	year	Volume	Pages (or article number)	Citation counts (CR)	Citation counts (OA)	Annual cit counts (CR)	Annual cit counts (OA)	references_count	count	Topic	Subfield	Field	Domain	Concepts
-10.1021/acs.chemrev.6b00284	2016-11-09	Strategies for Carbon and Sulfur Tolerant Solid Oxide Fuel Cell Materials, Incorporating Lessons from Heterogeneous Catalysis	Paul Boldrin; Enrique Ruiz-Trejo; Joshua Mermelstein; José Miguel Bermúdez Menéndez; Tomás Ramı́rez Reina; Nigel P. Brandon	https://orcid.org/0000-0003-0058-6876; https://orcid.org/0000-0001-5560-5750; https://orcid.org/0000-0001-7211-2958; https://orcid.org/0000-0001-9693-5107; https://orcid.org/0000-0003-2230-8666	6	University of Surrey; Imperial College London; Boeing (United States)	US; GB	Chemical Reviews	2016	116	13633-13684	289	296	26.27	26.91	465	5	Advancements in Solid Oxide Fuel Cells	Chemistry	Carbon fibers	Catalysis	Sulfur; Chemistry; Carbon fibers; Catalysis; Oxide; Solid oxide fuel cell; Fuel cells; Nanotechnology; Environmental chemistry; Chemical engineering; Organic chemistry; Materials science; Engineering; Composite number; Physical chemistry; Composite material; Anode; Electrode
-10.1126/science.aab3987	2015-07-23	Readily processed protonic ceramic fuel cells with high performance at low temperatures	Chuancheng Duan; Jianhua Tong; Meng Shang; Stefan Nikodemski; Michael Sanders; Sandrine Ricote; Ali Almansoori; Ryan O'Hayre	https://orcid.org/0000-0002-1826-1415; https://orcid.org/0000-0002-0684-1658; https://orcid.org/0000-0001-6366-5219; https://orcid.org/0000-0001-7565-0284; https://orcid.org/0000-0002-0789-5105; https://orcid.org/0000-0003-3762-3052	8	American Petroleum Institute; Colorado School of Mines	US	Science	2015	349	1321-1326	1325	1352	110.42	112.67	91	5	Advancements in Solid Oxide Fuel Cells	Oxide	Fuel cells	Materials science	Ceramic; Oxide; Fuel cells; Materials science; Methane; Electrolyte; Chemical engineering; Cathode; Ion; Solid oxide fuel cell; Chemistry; Composite material; Electrode; Metallurgy; Organic chemistry; Engineering; Physical chemistry"""
-        
-        if st.button("📋 Загрузить пример данных", use_container_width=True):
-            st.session_state.sample_data_loaded = sample_data
+    # Select all buttons
+    col1, col2 = st.columns(2)
+    with col1:
+        if st.button("✅ Select All Plots", use_container_width=True):
+            st.session_state.selected_plots = [plot[0] for plot in all_plots]
             st.rerun()
-        
-        st.markdown("---")
-        st.info("""
-        **Инструкция:**
-        1. Вставьте данные в формате TSV
-        2. Нажмите "Загрузить данные"
-        3. Выберите графики для генерации
-        4. Скачайте результаты
-        """)
+    with col2:
+        if st.button("❌ Clear All", use_container_width=True):
+            st.session_state.selected_plots = []
+            st.rerun()
     
-    # Основное содержимое
-    if selected == "📋 Загрузка данных":
-        st.header("📋 Загрузка данных")
-        
-        # Поле для ввода данных
-        data_input = st.text_area(
-            "Вставьте данные в формате TSV (табуляция между колонками)",
-            value=st.session_state.get('sample_data_loaded', ''),
-            height=300,
-            help="Скопируйте и вставьте данные из Excel/Google Sheets. Первая строка должна содержать заголовки колонок."
+    st.markdown("---")
+    
+    # Group plots by category
+    categories = {
+        "📈 Distributions & Statistics": ["1_distribution", "15_cumulative_influence", "12_correlation"],
+        "🌍 International Collaboration": ["2_country_network", "3_internationality", "5_collab_linear", "6_collab_log"],
+        "📚 Journals & Publications": ["4_journal_heatmap", "17_journal_impact"],
+        "🔗 References & Citations": ["6_1_bubble_chart", "6_2_bubble_chart", "13_cr_vs_oa", "16_references_impact"],
+        "🏷️ Concepts & Topics": ["7_concepts", "8_concept_cooccurrence", "9_concept_influence", "21_concept_network_weighted"],
+        "⏰ Temporal Analysis": ["10_temporal_evolution", "11_temporal_heatmap"],
+        "👥 Teams & Organizations": ["11_team_size", "18_author_network", "18_18_1_affiliation_network", "18_18_2_affiliation_network", "18_18_3_affiliation_network"],
+        "📊 Advanced Analysis": ["14_domain_citations", "20_mds", "19_hierarchical_sankey"]
+    }
+    
+    # Initialize selected_plots if None
+    if st.session_state.selected_plots is None:
+        st.session_state.selected_plots = [plot[0] for plot in all_plots]
+    
+    # Display checkboxes by category
+    for category, plot_ids in categories.items():
+        with st.expander(category, expanded=True):
+            cols = st.columns(2)
+            for idx, plot_id in enumerate(plot_ids):
+                plot_name = next(name for pid, name in all_plots if pid == plot_id)
+                with cols[idx % 2]:
+                    if st.checkbox(plot_name, 
+                                 value=plot_id in st.session_state.selected_plots,
+                                 key=f"cb_{plot_id}"):
+                        if plot_id not in st.session_state.selected_plots:
+                            st.session_state.selected_plots.append(plot_id)
+                    else:
+                        if plot_id in st.session_state.selected_plots:
+                            st.session_state.selected_plots.remove(plot_id)
+    
+    st.markdown("---")
+    
+    # Plot settings section
+    st.subheader("⚙️ Plot Settings")
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        # Regression toggle
+        show_regression = st.toggle(
+            "📈 Show Regression Lines", 
+            value=st.session_state.analyzer.plot_settings['show_regression'],
+            help="Display trend lines on scatter plots"
         )
+        st.session_state.analyzer.plot_settings['show_regression'] = show_regression
+    
+    with col2:
+        # Color palette selections
+        st.markdown("**🎨 Color Palettes**")
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        heatmap_palette = st.selectbox(
+            "Heatmap Palette",
+            options=COLOR_PALETTES['heatmap'],
+            index=COLOR_PALETTES['heatmap'].index(st.session_state.analyzer.plot_settings['heatmap_palette'])
+        )
+        st.session_state.analyzer.plot_settings['heatmap_palette'] = heatmap_palette
         
-        col1, col2 = st.columns(2)
+        scatter_palette = st.selectbox(
+            "Scatter Plot Palette",
+            options=COLOR_PALETTES['scatter'],
+            index=COLOR_PALETTES['scatter'].index(st.session_state.analyzer.plot_settings['scatter_palette'])
+        )
+        st.session_state.analyzer.plot_settings['scatter_palette'] = scatter_palette
+    
+    with col2:
+        bar_palette = st.selectbox(
+            "Bar Chart Palette",
+            options=COLOR_PALETTES['bar'],
+            index=COLOR_PALETTES['bar'].index(st.session_state.analyzer.plot_settings['bar_palette'])
+        )
+        st.session_state.analyzer.plot_settings['bar_palette'] = bar_palette
+        
+        network_palette = st.selectbox(
+            "Network Graph Palette",
+            options=COLOR_PALETTES['network'],
+            index=COLOR_PALETTES['network'].index(st.session_state.analyzer.plot_settings['network_palette'])
+        )
+        st.session_state.analyzer.plot_settings['network_palette'] = network_palette
+    
+    st.markdown("---")
+    
+    # Generate button
+    col1, col2 = st.columns([1, 1])
+    with col1:
+        if st.button("🚀 Generate Selected Plots", type="primary", use_container_width=True):
+            if not st.session_state.selected_plots:
+                st.error("❌ Please select at least one plot")
+            else:
+                with st.spinner("Generating plots..."):
+                    st.session_state.analyzer.generate_all_plots(st.session_state.selected_plots)
+                    st.session_state.plots_generated = True
+                    st.success(f"✅ Successfully generated {len(st.session_state.analyzer.all_figures)} plots!")
+                    
+                    # Auto-advance to visualization stage
+                    st.session_state.current_stage = 3
+                    st.rerun()
+    
+    with col2:
+        if st.button("🎯 Generate All Plots", use_container_width=True):
+            st.session_state.selected_plots = [plot[0] for plot in all_plots]
+            with st.spinner("Generating all plots..."):
+                st.session_state.analyzer.generate_all_plots()
+                st.session_state.plots_generated = True
+                st.success(f"✅ Successfully generated {len(st.session_state.analyzer.all_figures)} plots!")
+                st.session_state.current_stage = 3
+                st.rerun()
+
+def stage3_visualization():
+    """Stage 3: View generated plots"""
+    st.header("👁️ Stage 3: Visualization")
+    
+    # Navigation buttons
+    col1, col2, col3 = st.columns([1, 1, 1])
+    with col1:
+        if st.button("⬅️ Back to Settings", use_container_width=True):
+            st.session_state.current_stage = 2
+            st.rerun()
+    with col2:
+        if st.button("🏠 Back to Start", use_container_width=True):
+            st.session_state.current_stage = 1
+            st.rerun()
+    with col3:
+        if st.button("➡️ Proceed to Export", type="primary", use_container_width=True):
+            st.session_state.current_stage = 4
+            st.rerun()
+    
+    st.markdown("---")
+    
+    if not st.session_state.plots_generated or not st.session_state.analyzer.all_figures:
+        st.warning("⚠️ No plots generated yet. Please go back to Stage 2 and generate plots.")
+        if st.button("⬅️ Back to Plot Selection"):
+            st.session_state.current_stage = 2
+            st.rerun()
+        return
+    
+    # Plot navigation
+    plot_names = list(st.session_state.analyzer.all_figures.keys())
+    
+    # All plots list for reference
+    all_plots = [
+        ("1_distribution", "1. Distribution of Attention"),
+        ("2_country_network", "2. Country Collaboration Network"),
+        ("3_internationality", "3. Internationality vs Citations"),
+        ("4_journal_heatmap", "4. Journal-Year Heatmap"),
+        ("5_collab_linear", "5. Collaboration vs Citations (Linear)"),
+        ("6_collab_log", "6. Collaboration vs Citations (Log Y Scale)"),
+        ("6_1_bubble_chart", "6.1 References vs Impact (Linear)"),
+        ("6_2_bubble_chart", "6.2 References vs Impact (Log)"),
+        ("7_concepts", "7. Concepts Analysis"),
+        ("8_concept_cooccurrence", "8. Concept Co-occurrence"),
+        ("9_concept_influence", "9. Concept Influence Analysis"),
+        ("10_temporal_evolution", "10. Temporal Evolution"),
+        ("11_temporal_heatmap", "11. Temporal Heatmap"),
+        ("11_team_size", "12. Team Size Analysis"),
+        ("12_correlation", "13. Correlation Matrix"),
+        ("13_cr_vs_oa", "14. CR vs OA Comparison"),
+        ("14_domain_citations", "15. Citations by Domain"),
+        ("15_cumulative_influence", "16. Cumulative Influence"),
+        ("16_references_impact", "17. References vs Impact"),
+        ("17_journal_impact", "18. Journal Impact"),
+        ("18_author_network", "19. Author Collaboration Network"),
+        ("18_18_1_affiliation_network", "20.1 Affiliation Network (Top 20)"),
+        ("18_18_2_affiliation_network", "20.2 Affiliation Network (Top 30)"),
+        ("18_18_3_affiliation_network", "20.3 Affiliation Network (Top 50)"),
+        ("19_hierarchical_sankey", "21. Hierarchical Sankey Diagram"),
+        ("20_mds", "22. Multidimensional Scaling"),
+        ("21_concept_network_weighted", "23. Weighted Concept Network")
+    ]
+    
+    # Create mapping for display names
+    plot_display_names = {pid: name for pid, name in all_plots}
+    
+    # Plot selector
+    selected_plot_id = st.selectbox(
+        "📊 Select Plot to View",
+        options=plot_names,
+        format_func=lambda x: plot_display_names.get(x, x)
+    )
+    
+    # Display plot
+    if selected_plot_id in st.session_state.analyzer.all_figures:
+        fig = st.session_state.analyzer.all_figures[selected_plot_id]
+        
+        # Check plot type
+        if hasattr(fig, 'update_layout'):
+            # Plotly figure
+            st.plotly_chart(fig, use_container_width=True)
+        else:
+            # Matplotlib figure
+            st.pyplot(fig)
+        
+        # Plot info
+        st.info(f"**{plot_display_names.get(selected_plot_id, selected_plot_id)}**")
+        
+        # Navigation between plots
+        current_index = plot_names.index(selected_plot_id)
+        col1, col2, col3 = st.columns([1, 1, 1])
+        
         with col1:
-            if st.button("📥 Загрузить данные", type="primary", use_container_width=True):
-                if data_input.strip():
-                    with st.spinner("Обработка данных..."):
-                        st.session_state.analyzer.parse_data(data_input)
-                        st.success("✅ Данные успешно загружены!")
-                        st.session_state.plots_generated = False
-                else:
-                    st.error("❌ Пожалуйста, введите данные")
+            if current_index > 0:
+                if st.button("◀️ Previous Plot", use_container_width=True):
+                    st.session_state.current_plot_index = current_index - 1
+                    st.rerun()
         
         with col2:
-            if st.button("🗑️ Очистить", use_container_width=True):
-                st.session_state.sample_data_loaded = ''
-                st.rerun()
+            st.markdown(f"<div style='text-align: center'>Plot {current_index + 1} of {len(plot_names)}</div>", 
+                       unsafe_allow_html=True)
         
-        # Показать информацию о данных
-        if st.session_state.analyzer.df_processed is not None:
-            st.subheader("📊 Информация о данных")
-            col1, col2, col3, col4 = st.columns(4)
-            with col1:
-                st.metric("Статей", len(st.session_state.analyzer.df_processed))
-            with col2:
-                if 'year' in st.session_state.analyzer.df_processed.columns:
-                    year_min = int(st.session_state.analyzer.df_processed['year'].min())
-                    year_max = int(st.session_state.analyzer.df_processed['year'].max())
-                    st.metric("Годы", f"{year_min}-{year_max}")
-            with col3:
-                if 'count' in st.session_state.analyzer.df_processed.columns:
-                    total_mentions = int(st.session_state.analyzer.df_processed['count'].sum())
-                    st.metric("Всего упоминаний", f"{total_mentions:,}")
-            with col4:
-                if 'max_citations' in st.session_state.analyzer.df_processed.columns:
-                    mean_max_cit = st.session_state.analyzer.df_processed['max_citations'].mean()
-                    st.metric("Ср. макс. цитирований", f"{mean_max_cit:.1f}")
-            
-            # Показать таблицу
-            with st.expander("👁️ Просмотреть данные"):
-                st.dataframe(st.session_state.analyzer.df_processed.head(10))
+        with col3:
+            if current_index < len(plot_names) - 1:
+                if st.button("Next Plot ▶️", use_container_width=True):
+                    st.session_state.current_plot_index = current_index + 1
+                    st.rerun()
     
-    elif selected == "📊 Визуализация":
-        st.header("📊 Визуализация данных")
+    # Show statistics
+    st.markdown("---")
+    st.subheader("📊 Generation Statistics")
+    
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.metric("Generated Plots", len(st.session_state.analyzer.all_figures))
+    with col2:
+        st.metric("Errors", len(st.session_state.analyzer.errors))
+    with col3:
+        st.metric("Warnings", len(st.session_state.analyzer.warnings))
+    
+    if st.session_state.analyzer.errors:
+        with st.expander("❌ Errors"):
+            for error in st.session_state.analyzer.errors:
+                st.error(f"{error['timestamp']}: {error['message']}")
+    
+    if st.session_state.analyzer.warnings:
+        with st.expander("⚠️ Warnings"):
+            for warning in st.session_state.analyzer.warnings:
+                st.warning(f"{warning['timestamp']}: {warning['message']}")
+
+def stage4_export():
+    """Stage 4: Export results"""
+    st.header("📥 Stage 4: Export Results")
+    
+    # Navigation buttons
+    col1, col2 = st.columns([1, 1])
+    with col1:
+        if st.button("⬅️ Back to Visualization", use_container_width=True):
+            st.session_state.current_stage = 3
+            st.rerun()
+    with col2:
+        if st.button("🏠 Back to Start", use_container_width=True):
+            st.session_state.current_stage = 1
+            st.rerun()
+    
+    st.markdown("---")
+    
+    if not st.session_state.plots_generated or not st.session_state.analyzer.all_figures:
+        st.warning("⚠️ No plots generated yet. Please go back and generate plots first.")
+        if st.button("⬅️ Back to Plot Selection"):
+            st.session_state.current_stage = 2
+            st.rerun()
+        return
+    
+    st.success(f"✅ Ready to export: {len(st.session_state.analyzer.all_figures)} plots available")
+    
+    # Export options
+    st.subheader("📦 Export Options")
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        # Individual plot download
+        st.markdown("### 📸 Individual Plots")
         
-        if st.session_state.analyzer.df_processed is None:
-            st.warning("⚠️ Сначала загрузите данные в разделе 'Загрузка данных'")
-            return
-        
-        # Список графиков для выбора
         all_plots = [
             ("1_distribution", "1. Distribution of Attention"),
             ("2_country_network", "2. Country Collaboration Network"),
             ("3_internationality", "3. Internationality vs Citations"),
             ("4_journal_heatmap", "4. Journal-Year Heatmap"),
             ("5_collab_linear", "5. Collaboration vs Citations (Linear)"),
-            ("6_collab_log", "6. Collaboration vs Citations (Log-Log)"),
+            ("6_collab_log", "6. Collaboration vs Citations (Log Y Scale)"),
             ("6_1_bubble_chart", "6.1 References vs Impact (Linear)"),
             ("6_2_bubble_chart", "6.2 References vs Impact (Log)"),
             ("7_concepts", "7. Concepts Analysis"),
@@ -2615,227 +3424,94 @@ def main():
             ("15_cumulative_influence", "16. Cumulative Influence"),
             ("16_references_impact", "17. References vs Impact"),
             ("17_journal_impact", "18. Journal Impact"),
-            ("18_18_1_affiliation_network", "19.1 Affiliation Network (Top 20)"),
-            ("18_18_2_affiliation_network", "19.2 Affiliation Network (Top 30)"),
-            ("18_18_3_affiliation_network", "19.3 Affiliation Network (Top 50)"),
-            ("19_hierarchical_sankey", "20. Hierarchical Sankey Diagram"),
-            ("20_mds", "21. Multidimensional Scaling"),
-            ("21_concept_network_weighted", "22. Weighted Concept Network")
+            ("18_author_network", "19. Author Collaboration Network"),
+            ("18_18_1_affiliation_network", "20.1 Affiliation Network (Top 20)"),
+            ("18_18_2_affiliation_network", "20.2 Affiliation Network (Top 30)"),
+            ("18_18_3_affiliation_network", "20.3 Affiliation Network (Top 50)"),
+            ("19_hierarchical_sankey", "21. Hierarchical Sankey Diagram"),
+            ("20_mds", "22. Multidimensional Scaling"),
+            ("21_concept_network_weighted", "23. Weighted Concept Network")
         ]
         
-        # Выбор графиков
-        st.subheader("🎯 Выберите графики для генерации")
+        plot_display_names = {pid: name for pid, name in all_plots}
         
-        # Выбор всех графиков
-        col1, col2 = st.columns(2)
-        with col1:
-            if st.button("✅ Выбрать все", use_container_width=True):
-                st.session_state.selected_plots = [plot[0] for plot in all_plots]
-                st.rerun()
-        with col2:
-            if st.button("❌ Очистить выбор", use_container_width=True):
-                st.session_state.selected_plots = []
-                st.rerun()
+        available_plots = [(pid, plot_display_names.get(pid, pid)) 
+                          for pid in st.session_state.analyzer.all_figures.keys()]
         
-        # Инициализация выбранных графиков
-        if 'selected_plots' not in st.session_state:
-            st.session_state.selected_plots = [plot[0] for plot in all_plots]
-        
-        # Чекбоксы для выбора графиков
-        st.markdown("### Доступные графики")
-        
-        # Группируем графики по категориям
-        categories = {
-            "📈 Основные распределения": ["1_distribution", "15_cumulative_influence"],
-            "🌍 Международное сотрудничество": ["2_country_network", "3_internationality", "5_collab_linear", "6_collab_log"],
-            "📚 Журналы и публикации": ["4_journal_heatmap", "17_journal_impact"],
-            "🔗 Ссылки и цитирования": ["6_1_bubble_chart", "6_2_bubble_chart", "13_cr_vs_oa", "16_references_impact"],
-            "🏷️ Концепты и темы": ["7_concepts", "8_concept_cooccurrence", "9_concept_influence", "21_concept_network_weighted"],
-            "⏰ Временной анализ": ["10_temporal_evolution", "11_temporal_heatmap"],
-            "👥 Команды и организации": ["11_team_size", "18_18_1_affiliation_network", 
-                                       "18_18_2_affiliation_network", "18_18_3_affiliation_network"],
-            "📊 Анализ метрик": ["12_correlation", "14_domain_citations", "20_mds"],
-            "🏛️ Иерархическая структура": ["19_hierarchical_sankey"]
-        }
-        
-        for category, plot_ids in categories.items():
-            with st.expander(category):
-                for plot_id in plot_ids:
-                    plot_name = next(name for pid, name in all_plots if pid == plot_id)
-                    if st.checkbox(plot_name, 
-                                 value=plot_id in st.session_state.selected_plots,
-                                 key=f"checkbox_{plot_id}"):
-                        if plot_id not in st.session_state.selected_plots:
-                            st.session_state.selected_plots.append(plot_id)
-                    else:
-                        if plot_id in st.session_state.selected_plots:
-                            st.session_state.selected_plots.remove(plot_id)
-        
-        # Кнопки генерации
-        st.markdown("---")
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            if st.button("🚀 Сгенерировать выбранные графики", type="primary", use_container_width=True):
-                if not st.session_state.selected_plots:
-                    st.error("❌ Выберите хотя бы один график")
-                else:
-                    with st.spinner("Генерация графиков..."):
-                        st.session_state.analyzer.generate_all_plots(st.session_state.selected_plots)
-                        st.session_state.plots_generated = True
-                        st.success(f"✅ Сгенерировано {len(st.session_state.analyzer.all_figures)} графиков!")
-        
-        with col2:
-            if st.button("🎯 Сгенерировать все графики", use_container_width=True):
-                st.session_state.selected_plots = [plot[0] for plot in all_plots]
-                with st.spinner("Генерация всех графиков..."):
-                    st.session_state.analyzer.generate_all_plots()
-                    st.session_state.plots_generated = True
-                    st.success(f"✅ Сгенерировано {len(st.session_state.analyzer.all_figures)} графиков!")
-        
-        # Показать сгенерированные графики
-        if st.session_state.plots_generated and st.session_state.analyzer.all_figures:
-            st.markdown("---")
-            st.subheader("📈 Результаты визуализации")
-            
-            # Навигация по графикам
-            plot_names = list(st.session_state.analyzer.all_figures.keys())
-            
-            if len(plot_names) > 0:
-                # Селектор для выбора графика
-                selected_plot = st.selectbox(
-                    "Выберите график для просмотра",
-                    options=plot_names,
-                    format_func=lambda x: next(name for pid, name in all_plots if pid == x)
-                )
-                
-                # Показать выбранный график
-                if selected_plot in st.session_state.analyzer.all_figures:
-                    fig = st.session_state.analyzer.all_figures[selected_plot]
-                    
-                    # Проверяем тип графика (plotly или matplotlib)
-                    if hasattr(fig, 'update_layout'):
-                        # Это plotly фигура
-                        st.plotly_chart(fig, use_container_width=True)
-                    else:
-                        # Это matplotlib фигура
-                        st.pyplot(fig)
-                    
-                    # Информация о графике
-                    plot_name = next(name for pid, name in all_plots if pid == selected_plot)
-                    st.info(f"**{plot_name}**")
-                    
-                    # Кнопки для навигации
-                    col1, col2, col3 = st.columns(3)
-                    current_index = plot_names.index(selected_plot)
-                    
-                    with col1:
-                        if current_index > 0:
-                            if st.button("◀️ Предыдущий"):
-                                st.session_state.current_plot_index = current_index - 1
-                                st.rerun()
-                    
-                    with col2:
-                        st.write(f"График {current_index + 1} из {len(plot_names)}")
-                    
-                    with col3:
-                        if current_index < len(plot_names) - 1:
-                            if st.button("Следующий ▶️"):
-                                st.session_state.current_plot_index = current_index + 1
-                                st.rerun()
-    
-    elif selected == "📥 Скачивание":
-        st.header("📥 Скачивание результатов")
-        
-        if not st.session_state.plots_generated or not st.session_state.analyzer.all_figures:
-            st.warning("⚠️ Сначала сгенерируйте графики в разделе 'Визуализация'")
-            return
-        
-        st.success(f"✅ Доступно для скачивания: {len(st.session_state.analyzer.all_figures)} графиков")
-        
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            # Скачать отдельные графики
-            st.subheader("📸 Отдельные графики")
-
-            plot_options = {}
-            for pid in st.session_state.analyzer.all_figures.keys():
-                for plot_id, name in ALL_PLOTS:
-                    if plot_id == pid:
-                        plot_options[name] = pid
-                        break
-            
-            selected_plot_name = st.selectbox("Выберите график", options=list(plot_options.keys()))
+        if available_plots:
+            selected_plot_name = st.selectbox(
+                "Select plot to download",
+                options=[pid for pid, _ in available_plots],
+                format_func=lambda x: plot_display_names.get(x, x)
+            )
             
             if selected_plot_name:
-                plot_id = plot_options[selected_plot_name]
-                fig = st.session_state.analyzer.all_figures[plot_id]
+                fig = st.session_state.analyzer.all_figures[selected_plot_name]
                 
-                # Сохранить график в буфер (для matplotlib)
-                if hasattr(fig, 'update_layout'):
-                    # plotly фигура
+                # Save to buffer based on plot type
+                img_buffer = io.BytesIO()
+                
+                if hasattr(fig, 'write_image'):
+                    # Plotly figure
                     import plotly.io as pio
-                    img_buffer = io.BytesIO()
-                    pio.write_image(fig, img_buffer, format='png', width=1200, height=800, scale=2)
-                    img_buffer.seek(0)
+                    pio.write_image(fig, img_buffer, format='png', width=1200, height=900, scale=2)
                 else:
-                    # matplotlib фигура
-                    img_buffer = io.BytesIO()
-                    fig.savefig(img_buffer, format='png', dpi=300, bbox_inches='tight')
-                    img_buffer.seek(0)
+                    # Matplotlib figure
+                    fig.savefig(img_buffer, format='png', dpi=600, bbox_inches='tight')
+                
+                img_buffer.seek(0)
                 
                 st.download_button(
-                    label=f"📥 Скачать {selected_plot_name}",
+                    label=f"📥 Download {plot_display_names.get(selected_plot_name, selected_plot_name)}",
                     data=img_buffer,
-                    file_name=f"plot_{selected_plot_name[:20].replace(' ', '_')}.png",
+                    file_name=f"{selected_plot_name}.png",
                     mime="image/png",
                     use_container_width=True
                 )
+    
+    with col2:
+        # Bulk export
+        st.markdown("### 📦 Bulk Export")
         
-        with col2:
-            # Скачать все в ZIP
-            st.subheader("📦 Все результаты")
-            
-            if st.button("📥 Скачать ZIP архив", type="primary", use_container_width=True):
-                with st.spinner("Создание ZIP архива..."):
-                    zip_buffer = st.session_state.analyzer.save_all_to_zip(include_excel=True)
+        include_excel = st.checkbox("Include Excel Data Report", value=True)
+        
+        if st.button("📥 Download Complete ZIP Archive", type="primary", use_container_width=True):
+            with st.spinner("Creating ZIP archive..."):
+                zip_buffer = st.session_state.analyzer.save_all_to_zip(include_excel=include_excel)
+                
+                if zip_buffer:
+                    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                    filename = f"scientific_analysis_{timestamp}.zip"
                     
-                    if zip_buffer:
-                        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                        filename = f"scientific_analysis_{timestamp}.zip"
-                        
-                        st.download_button(
-                            label="⬇️ Скачать ZIP",
-                            data=zip_buffer,
-                            file_name=filename,
-                            mime="application/zip",
-                            use_container_width=True
-                        )
-        
-        # Статистика
-        st.markdown("---")
-        st.subheader("📊 Статистика")
-        
-        col1, col2, col3 = st.columns(3)
-        with col1:
-            st.metric("Всего графиков", len(st.session_state.analyzer.all_figures))
-        with col2:
-            st.metric("Ошибок", len(st.session_state.analyzer.errors))
-        with col3:
-            st.metric("Предупреждений", len(st.session_state.analyzer.warnings))
-        
-        # Показать ошибки и предупреждения
-        if st.session_state.analyzer.errors:
-            with st.expander("❌ Ошибки"):
-                for error in st.session_state.analyzer.errors:
-                    st.error(f"{error['timestamp']}: {error['message']}")
-        
-        if st.session_state.analyzer.warnings:
-            with st.expander("⚠️ Предупреждения"):
-                for warning in st.session_state.analyzer.warnings:
-                    st.warning(f"{warning['timestamp']}: {warning['message']}")
+                    st.download_button(
+                        label="⬇️ Download ZIP",
+                        data=zip_buffer,
+                        file_name=filename,
+                        mime="application/zip",
+                        use_container_width=True
+                    )
+    
+    # Statistics
+    st.markdown("---")
+    st.subheader("📊 Export Statistics")
+    
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.metric("Plots", len(st.session_state.analyzer.all_figures))
+    with col2:
+        st.metric("Data Points", len(st.session_state.analyzer.plot_data) if st.session_state.analyzer.plot_data else 0)
+    with col3:
+        st.metric("Errors", len(st.session_state.analyzer.errors))
+    
+    # Footer
+    st.markdown("---")
+    st.markdown("""
+    <div class="footer">
+        <p>Scientific Data Visualization Dashboard | Powered by Streamlit, Matplotlib, Plotly, NetworkX</p>
+        <p>All plots generated at 600 DPI with scientific styling (12×9 inches)</p>
+    </div>
+    """, unsafe_allow_html=True)
 
-# Запуск приложения
+# Run application
 if __name__ == "__main__":
     main()
