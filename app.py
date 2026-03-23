@@ -287,255 +287,118 @@ class ScientificDataAnalyzer:
     # НОВАЯ ФУНКЦИЯ: ХОРДОВАЯ ДИАГРАММА ДЛЯ СТРАН
     # ============================================================================
     
-    def plot_country_chord_diagram(self, top_n=30):
-        """Хордовая диаграмма сотрудничества между странами с градиентными хордами"""
+    def plot_country_chord_diagram(self, top_n=20):
+        """Диаграмма хорд для международного сотрудничества"""
         try:
             if 'countries_list' not in self.df_processed.columns:
                 return None
             
-            # Собираем пары стран и веса
-            country_pairs = []
-            country_weights = defaultdict(float)
+            # Собираем топ страны по количеству статей
+            all_countries = []
+            for countries in self.df_processed['countries_list']:
+                if isinstance(countries, list):
+                    all_countries.extend([c.strip().upper() for c in countries])
+            
+            if len(all_countries) == 0:
+                return None
+            
+            country_counts = pd.Series(all_countries).value_counts()
+            top_countries = country_counts.head(top_n).index.tolist()
+            
+            # Создаем матрицу сотрудничества
+            n = len(top_countries)
+            collaboration_matrix = np.zeros((n, n))
+            country_to_idx = {country: i for i, country in enumerate(top_countries)}
             
             for idx, row in self.df_processed.iterrows():
-                if isinstance(row['countries_list'], list) and len(row['countries_list']) >= 2:
-                    countries = [c.strip().upper() for c in row['countries_list']]
+                if isinstance(row['countries_list'], list):
+                    countries_in_paper = [c.strip().upper() for c in row['countries_list'] if c.strip().upper() in top_countries]
                     weight = row.get('count', 1)
                     
-                    # Добавляем пары
-                    for i in range(len(countries)):
-                        for j in range(i+1, len(countries)):
-                            pair = tuple(sorted([countries[i], countries[j]]))
-                            country_weights[pair] += weight
-                            country_pairs.append({
-                                'country1': countries[i],
-                                'country2': countries[j],
-                                'weight': weight
-                            })
+                    for i in range(len(countries_in_paper)):
+                        for j in range(i+1, len(countries_in_paper)):
+                            c1, c2 = countries_in_paper[i], countries_in_paper[j]
+                            collaboration_matrix[country_to_idx[c1], country_to_idx[c2]] += weight
+                            collaboration_matrix[country_to_idx[c2], country_to_idx[c1]] += weight
             
-            if len(country_weights) == 0:
-                self.log_warning("No country pairs found for chord diagram")
+            # Фильтруем страны без связей
+            row_sums = collaboration_matrix.sum(axis=1)
+            active_indices = row_sums > 0
+            collaboration_matrix = collaboration_matrix[active_indices][:, active_indices]
+            active_countries = [top_countries[i] for i in range(n) if active_indices[i]]
+            
+            if len(active_countries) < 3:
+                self.log_warning("Insufficient data for chord diagram")
                 return None
-            
-            # Получаем топ стран по общей активности
-            country_total_weights = defaultdict(float)
-            for (c1, c2), w in country_weights.items():
-                country_total_weights[c1] += w
-                country_total_weights[c2] += w
-            
-            top_countries = sorted(country_total_weights.items(), key=lambda x: x[1], reverse=True)[:top_n]
-            top_country_names = [c[0] for c in top_countries]
-            
-            # Фильтруем связи между топ странами
-            filtered_weights = {}
-            for (c1, c2), w in country_weights.items():
-                if c1 in top_country_names and c2 in top_country_names:
-                    filtered_weights[(c1, c2)] = w
-            
-            if len(filtered_weights) == 0:
-                self.log_warning("Insufficient connections between top countries")
-                return None
-            
-            # Создаем матрицу связей
-            n = len(top_country_names)
-            matrix = np.zeros((n, n))
-            country_to_idx = {country: i for i, country in enumerate(top_country_names)}
-            
-            for (c1, c2), w in filtered_weights.items():
-                i, j = country_to_idx[c1], country_to_idx[c2]
-                matrix[i, j] = w
-                matrix[j, i] = w
-            
-            # Создаем цветовую палитру для стран
-            colors = []
-            color_palette = px.colors.qualitative.Set3 + px.colors.qualitative.Pastel + px.colors.qualitative.Bold
-            for i in range(n):
-                colors.append(color_palette[i % len(color_palette)])
-            
-            # Создаем хордовую диаграмму с градиентными хордами
-            fig = go.Figure()
-            
-            # Создаем данные для хорд с градиентом
-            chord_data = []
-            for i in range(n):
-                for j in range(i+1, n):
-                    if matrix[i, j] > 0:
-                        chord_data.append({
-                            'source': i,
-                            'target': j,
-                            'value': matrix[i, j],
-                            'source_color': colors[i],
-                            'target_color': colors[j]
-                        })
-            
-            # Добавляем хорды с градиентом (создаем отдельные хорды для каждого направления градиента)
-            for chord in chord_data:
-                # Создаем градиентные хорды: первая половина от source к середине, вторая от середины к target
-                # Для plotly используем несколько сегментов с плавным переходом цвета
-                fig.add_trace(go.Sankey(
-                    node=dict(
-                        pad=15,
-                        thickness=20,
-                        line=dict(color="black", width=0.5),
-                        label=top_country_names,
-                        color=colors,
-                        x=[np.sin(2 * np.pi * i / n) * 0.8 + 0.5 for i in range(n)],
-                        y=[np.cos(2 * np.pi * i / n) * 0.8 + 0.5 for i in range(n)]
-                    ),
-                    link=dict(
-                        source=[chord['source']],
-                        target=[chord['target']],
-                        value=[chord['value']],
-                        color=[f'rgba(0,0,0,0)'],  # Прозрачные для переопределения
-                        hovertemplate=f"{top_country_names[chord['source']]} → {top_country_names[chord['target']]}: {chord['value']:.0f}<extra></extra>"
-                    ),
-                    arrangement="fixed"
-                ))
-            
-            # Более простой подход: используем scatter для узлов и отдельные линии для хорд
-            fig = go.Figure()
-            
-            # Позиции узлов на круге
-            angles = np.linspace(0, 2 * np.pi, n, endpoint=False)
-            radius = 0.8
-            x_positions = radius * np.cos(angles) + 0.5
-            y_positions = radius * np.sin(angles) + 0.5
-            
-            # Добавляем узлы как scatter точки
-            fig.add_trace(go.Scatter(
-                x=x_positions,
-                y=y_positions,
-                mode='markers+text',
-                marker=dict(
-                    size=40,
-                    color=colors,
-                    line=dict(color='black', width=2),
-                    symbol='circle'
-                ),
-                text=top_country_names,
-                textposition='middle center',
-                textfont=dict(size=10, color='black', family='Arial Black'),
-                hoverinfo='text',
-                hovertext=[f"<b>{c}</b><br>Total weight: {country_total_weights[c]:.0f}" for c in top_country_names],
-                name='Countries'
-            ))
-            
-            # Создаем хорды с градиентом (используем линии с цветовым градиентом)
-            # Для каждой связи создаем несколько сегментов для плавного перехода цвета
-            for chord in chord_data:
-                i, j = chord['source'], chord['target']
-                value = chord['value']
-                color1 = chord['source_color']
-                color2 = chord['target_color']
-                
-                # Толщина хорды пропорциональна весу
-                line_width = max(2, min(15, value / 20))
-                
-                # Координаты точек на окружности
-                x1, y1 = x_positions[i], y_positions[i]
-                x2, y2 = x_positions[j], y_positions[j]
-                
-                # Создаем кривую Безье для хорды
-                # Контрольная точка для кривой (внутри круга)
-                cx = (x1 + x2) / 2
-                cy = (y1 + y2) / 2
-                
-                # Нормализуем контрольную точку для плавной кривой
-                dist = np.sqrt((cx - 0.5)**2 + (cy - 0.5)**2)
-                if dist > 0:
-                    cx = 0.5 + (cx - 0.5) * 0.6 / dist
-                    cy = 0.5 + (cy - 0.5) * 0.6 / dist
-                
-                # Создаем параметрическую кривую
-                t = np.linspace(0, 1, 100)
-                # Квадратичная кривая Безье
-                curve_x = (1-t)**2 * x1 + 2*(1-t)*t * cx + t**2 * x2
-                curve_y = (1-t)**2 * y1 + 2*(1-t)*t * cy + t**2 * y2
-                
-                # Создаем градиент цвета вдоль кривой
-                # Разбиваем кривую на сегменты и каждый сегмент красим с плавным переходом
-                for k in range(len(t)-1):
-                    # Цвет в начале и конце сегмента
-                    t_mid = (t[k] + t[k+1]) / 2
-                    # Интерполяция цвета
-                    r1, g1, b1 = int(color1[1:3], 16), int(color1[3:5], 16), int(color1[5:7], 16)
-                    r2, g2, b2 = int(color2[1:3], 16), int(color2[3:5], 16), int(color2[5:7], 16)
-                    r = r1 * (1 - t_mid) + r2 * t_mid
-                    g = g1 * (1 - t_mid) + g2 * t_mid
-                    b = b1 * (1 - t_mid) + b2 * t_mid
-                    segment_color = f'rgb({int(r)}, {int(g)}, {int(b)})'
-                    
-                    fig.add_trace(go.Scatter(
-                        x=[curve_x[k], curve_x[k+1]],
-                        y=[curve_y[k], curve_y[k+1]],
-                        mode='lines',
-                        line=dict(width=line_width, color=segment_color, shape='spline'),
-                        hoverinfo='none',
-                        showlegend=False
-                    ))
-            
-            # Добавляем внутренний круг для эстетики
-            theta = np.linspace(0, 2 * np.pi, 100)
-            inner_radius = radius - 0.12
-            inner_x = inner_radius * np.cos(theta) + 0.5
-            inner_y = inner_radius * np.sin(theta) + 0.5
-            
-            fig.add_trace(go.Scatter(
-                x=inner_x,
-                y=inner_y,
-                mode='lines',
-                line=dict(color='white', width=2),
-                fill='toself',
-                fillcolor='rgba(255,255,255,0.8)',
-                hoverinfo='none',
-                showlegend=False
-            ))
-            
-            # Добавляем внешний круг
-            outer_x = radius * np.cos(theta) + 0.5
-            outer_y = radius * np.sin(theta) + 0.5
-            
-            fig.add_trace(go.Scatter(
-                x=outer_x,
-                y=outer_y,
-                mode='lines',
-                line=dict(color='gray', width=1, dash='dot'),
-                hoverinfo='none',
-                showlegend=False
-            ))
-            
-            fig.update_layout(
-                title=f'Country Collaboration Chord Diagram (Top {top_n} Countries)',
-                width=900,
-                height=900,
-                xaxis=dict(showgrid=False, zeroline=False, visible=False, range=[0, 1]),
-                yaxis=dict(showgrid=False, zeroline=False, visible=False, range=[0, 1]),
-                showlegend=False,
-                plot_bgcolor='white',
-                hovermode='closest',
-                annotations=[
-                    dict(
-                        x=0.5,
-                        y=0.5,
-                        xref='paper',
-                        yref='paper',
-                        text=f'Total collaborations: {len(chord_data)}<br>Total weight: {sum(c["value"] for c in chord_data):.0f}',
-                        showarrow=False,
-                        font=dict(size=12),
-                        bgcolor='rgba(255,255,255,0.9)',
-                        bordercolor='black',
-                        borderwidth=1
-                    )
-                ]
-            )
             
             # Сохраняем данные
             self.plot_data['country_chord_diagram'] = {
-                'top_countries': top_country_names,
-                'matrix': matrix.tolist(),
-                'weights': dict(filtered_weights),
-                'total_weight': sum(filtered_weights.values())
+                'matrix': collaboration_matrix.tolist(),
+                'countries': active_countries,
+                'total_collaborations': int(collaboration_matrix.sum() / 2)
             }
+            
+            # Создаем диаграмму хорд с plotly
+            fig = go.Figure()
+            
+            # Создаем цветовую палитру
+            colors = plt.cm.Set3(np.linspace(0, 1, len(active_countries)))
+            
+            # Безопасная функция конвертации HEX в RGB
+            def hex_to_rgb(color):
+                """Конвертирует HEX цвет в RGB кортеж (0-255)"""
+                if isinstance(color, str) and color.startswith('#') and len(color) == 7:
+                    try:
+                        return (int(color[1:3], 16), int(color[3:5], 16), int(color[5:7], 16))
+                    except ValueError:
+                        return (46, 134, 171)  # Цвет по умолчанию (#2E86AB)
+                elif isinstance(color, (tuple, list)) and len(color) == 3:
+                    # Если уже RGB кортеж, возвращаем как есть
+                    return tuple(color)
+                else:
+                    return (46, 134, 171)  # Цвет по умолчанию
+            
+            # Преобразуем цвета в RGB для plotly
+            rgb_colors = []
+            for i in range(len(active_countries)):
+                if i < len(colors):
+                    # Конвертируем matplotlib цвет в HEX, если нужно
+                    if isinstance(colors[i], (tuple, list)) and len(colors[i]) == 4:
+                        # RGBA кортеж
+                        r, g, b, a = colors[i]
+                        rgb_colors.append(f'rgba({int(r*255)}, {int(g*255)}, {int(b*255)}, 0.7)')
+                    elif isinstance(colors[i], (tuple, list)) and len(colors[i]) == 3:
+                        # RGB кортеж
+                        r, g, b = colors[i]
+                        rgb_colors.append(f'rgba({int(r*255)}, {int(g*255)}, {int(b*255)}, 0.7)')
+                    elif isinstance(colors[i], str) and colors[i].startswith('#'):
+                        # HEX строка
+                        r, g, b = hex_to_rgb(colors[i])
+                        rgb_colors.append(f'rgba({r}, {g}, {b}, 0.7)')
+                    else:
+                        # Цвет по умолчанию
+                        rgb_colors.append('rgba(46, 134, 171, 0.7)')
+                else:
+                    rgb_colors.append('rgba(46, 134, 171, 0.7)')
+            
+            # Добавляем диаграмму хорд
+            fig.add_trace(go.Chord(
+                matrix=collaboration_matrix,
+                labels=active_countries,
+                colorscale='Viridis',
+                line=dict(color='black', width=0.5),
+                hoverinfo='all',
+                hovertemplate='%{source.label} → %{target.label}<br>Collaborations: %{value}<extra></extra>'
+            ))
+            
+            fig.update_layout(
+                title=f'Country Collaboration Chord Diagram (Top {len(active_countries)} Countries)',
+                font_size=12,
+                width=1000,
+                height=1000,
+                showlegend=False,
+                margin=dict(t=100, l=50, r=50, b=50)
+            )
             
             return fig
             
@@ -547,235 +410,92 @@ class ScientificDataAnalyzer:
     # НОВАЯ ФУНКЦИЯ: ХОРДОВАЯ ДИАГРАММА ДЛЯ АФФИЛИАЦИЙ
     # ============================================================================
     
-    def plot_affiliation_chord_diagram(self, top_n=30):
-        """Хордовая диаграмма сотрудничества между аффилиациями с градиентными хордами"""
+    def plot_affiliation_chord_diagram(self, top_n=20):
+        """Диаграмма хорд для сотрудничества между аффилиациями"""
         try:
             if 'affiliations_list' not in self.df_processed.columns:
                 return None
             
-            # Собираем пары аффилиаций и веса
-            aff_pairs = []
-            aff_weights = defaultdict(float)
+            # Собираем топ аффилиации по количеству статей
+            all_affiliations = []
+            for affiliations in self.df_processed['affiliations_list']:
+                if isinstance(affiliations, list):
+                    all_affiliations.extend([a.strip() for a in affiliations])
+            
+            if len(all_affiliations) == 0:
+                return None
+            
+            affiliation_counts = pd.Series(all_affiliations).value_counts()
+            top_affiliations = affiliation_counts.head(top_n).index.tolist()
+            
+            # Создаем матрицу сотрудничества
+            n = len(top_affiliations)
+            collaboration_matrix = np.zeros((n, n))
+            affiliation_to_idx = {aff: i for i, aff in enumerate(top_affiliations)}
             
             for idx, row in self.df_processed.iterrows():
-                if isinstance(row['affiliations_list'], list) and len(row['affiliations_list']) >= 2:
-                    affs = [a.strip() for a in row['affiliations_list']]
+                if isinstance(row['affiliations_list'], list):
+                    affiliations_in_paper = [a.strip() for a in row['affiliations_list'] if a.strip() in top_affiliations]
                     weight = row.get('count', 1)
                     
-                    # Добавляем пары
-                    for i in range(len(affs)):
-                        for j in range(i+1, len(affs)):
-                            pair = tuple(sorted([affs[i], affs[j]]))
-                            aff_weights[pair] += weight
-                            aff_pairs.append({
-                                'aff1': affs[i],
-                                'aff2': affs[j],
-                                'weight': weight
-                            })
+                    for i in range(len(affiliations_in_paper)):
+                        for j in range(i+1, len(affiliations_in_paper)):
+                            a1, a2 = affiliations_in_paper[i], affiliations_in_paper[j]
+                            collaboration_matrix[affiliation_to_idx[a1], affiliation_to_idx[a2]] += weight
+                            collaboration_matrix[affiliation_to_idx[a2], affiliation_to_idx[a1]] += weight
             
-            if len(aff_weights) == 0:
-                self.log_warning("No affiliation pairs found for chord diagram")
+            # Фильтруем аффилиации без связей
+            row_sums = collaboration_matrix.sum(axis=1)
+            active_indices = row_sums > 0
+            collaboration_matrix = collaboration_matrix[active_indices][:, active_indices]
+            active_affiliations = [top_affiliations[i] for i in range(n) if active_indices[i]]
+            
+            if len(active_affiliations) < 3:
+                self.log_warning("Insufficient data for affiliation chord diagram")
                 return None
-            
-            # Получаем топ аффилиации по общей активности
-            aff_total_weights = defaultdict(float)
-            for (a1, a2), w in aff_weights.items():
-                aff_total_weights[a1] += w
-                aff_total_weights[a2] += w
-            
-            top_affs = sorted(aff_total_weights.items(), key=lambda x: x[1], reverse=True)[:top_n]
-            top_aff_names = [a[0] for a in top_affs]
-            
-            # Сокращаем длинные названия для отображения
-            short_aff_names = []
-            for aff in top_aff_names:
-                if len(aff) > 25:
-                    words = aff.split()
-                    if len(words) > 3:
-                        short_aff = ' '.join(words[:3]) + '...'
-                    else:
-                        short_aff = aff[:22] + '...'
-                else:
-                    short_aff = aff
-                short_aff_names.append(short_aff)
-            
-            # Фильтруем связи между топ аффилиациями
-            filtered_weights = {}
-            for (a1, a2), w in aff_weights.items():
-                if a1 in top_aff_names and a2 in top_aff_names:
-                    filtered_weights[(a1, a2)] = w
-            
-            if len(filtered_weights) == 0:
-                self.log_warning("Insufficient connections between top affiliations")
-                return None
-            
-            # Создаем матрицу связей
-            n = len(top_aff_names)
-            matrix = np.zeros((n, n))
-            aff_to_idx = {aff: i for i, aff in enumerate(top_aff_names)}
-            
-            for (a1, a2), w in filtered_weights.items():
-                i, j = aff_to_idx[a1], aff_to_idx[a2]
-                matrix[i, j] = w
-                matrix[j, i] = w
-            
-            # Создаем цветовую палитру для аффилиаций
-            colors = []
-            color_palette = px.colors.qualitative.Set3 + px.colors.qualitative.Pastel + px.colors.qualitative.Bold + px.colors.qualitative.Dark24
-            for i in range(n):
-                colors.append(color_palette[i % len(color_palette)])
-            
-            # Создаем данные для хорд
-            chord_data = []
-            for i in range(n):
-                for j in range(i+1, n):
-                    if matrix[i, j] > 0:
-                        chord_data.append({
-                            'source': i,
-                            'target': j,
-                            'value': matrix[i, j],
-                            'source_color': colors[i],
-                            'target_color': colors[j]
-                        })
-            
-            # Создаем хордовую диаграмму
-            fig = go.Figure()
-            
-            # Позиции узлов на круге
-            angles = np.linspace(0, 2 * np.pi, n, endpoint=False)
-            radius = 0.8
-            x_positions = radius * np.cos(angles) + 0.5
-            y_positions = radius * np.sin(angles) + 0.5
-            
-            # Добавляем узлы как scatter точки
-            fig.add_trace(go.Scatter(
-                x=x_positions,
-                y=y_positions,
-                mode='markers+text',
-                marker=dict(
-                    size=35,
-                    color=colors,
-                    line=dict(color='black', width=1.5),
-                    symbol='circle'
-                ),
-                text=short_aff_names,
-                textposition='middle center',
-                textfont=dict(size=9, color='black', family='Arial'),
-                hoverinfo='text',
-                hovertext=[f"<b>{aff}</b><br>Total collaborations: {aff_total_weights[aff]:.0f}" for aff in top_aff_names],
-                name='Affiliations'
-            ))
-            
-            # Создаем хорды с градиентом
-            for chord in chord_data:
-                i, j = chord['source'], chord['target']
-                value = chord['value']
-                color1 = chord['source_color']
-                color2 = chord['target_color']
-                
-                # Толщина хорды пропорциональна весу
-                line_width = max(1.5, min(12, value / 30))
-                
-                # Координаты точек на окружности
-                x1, y1 = x_positions[i], y_positions[i]
-                x2, y2 = x_positions[j], y_positions[j]
-                
-                # Создаем кривую Безье
-                cx = (x1 + x2) / 2
-                cy = (y1 + y2) / 2
-                
-                dist = np.sqrt((cx - 0.5)**2 + (cy - 0.5)**2)
-                if dist > 0:
-                    cx = 0.5 + (cx - 0.5) * 0.65 / dist
-                    cy = 0.5 + (cy - 0.5) * 0.65 / dist
-                
-                # Параметрическая кривая
-                t = np.linspace(0, 1, 80)
-                curve_x = (1-t)**2 * x1 + 2*(1-t)*t * cx + t**2 * x2
-                curve_y = (1-t)**2 * y1 + 2*(1-t)*t * cy + t**2 * y2
-                
-                # Разбиваем на сегменты с градиентом
-                for k in range(len(t)-1):
-                    t_mid = (t[k] + t[k+1]) / 2
-                    r1, g1, b1 = int(color1[1:3], 16), int(color1[3:5], 16), int(color1[5:7], 16)
-                    r2, g2, b2 = int(color2[1:3], 16), int(color2[3:5], 16), int(color2[5:7], 16)
-                    r = r1 * (1 - t_mid) + r2 * t_mid
-                    g = g1 * (1 - t_mid) + g2 * t_mid
-                    b = b1 * (1 - t_mid) + b2 * t_mid
-                    segment_color = f'rgb({int(r)}, {int(g)}, {int(b)})'
-                    
-                    fig.add_trace(go.Scatter(
-                        x=[curve_x[k], curve_x[k+1]],
-                        y=[curve_y[k], curve_y[k+1]],
-                        mode='lines',
-                        line=dict(width=line_width, color=segment_color, shape='spline'),
-                        hoverinfo='none',
-                        showlegend=False
-                    ))
-            
-            # Внутренний круг
-            theta = np.linspace(0, 2 * np.pi, 100)
-            inner_radius = radius - 0.12
-            inner_x = inner_radius * np.cos(theta) + 0.5
-            inner_y = inner_radius * np.sin(theta) + 0.5
-            
-            fig.add_trace(go.Scatter(
-                x=inner_x,
-                y=inner_y,
-                mode='lines',
-                line=dict(color='white', width=2),
-                fill='toself',
-                fillcolor='rgba(255,255,255,0.85)',
-                hoverinfo='none',
-                showlegend=False
-            ))
-            
-            # Внешний круг
-            outer_x = radius * np.cos(theta) + 0.5
-            outer_y = radius * np.sin(theta) + 0.5
-            
-            fig.add_trace(go.Scatter(
-                x=outer_x,
-                y=outer_y,
-                mode='lines',
-                line=dict(color='gray', width=1, dash='dot'),
-                hoverinfo='none',
-                showlegend=False
-            ))
-            
-            fig.update_layout(
-                title=f'Affiliation Collaboration Chord Diagram (Top {top_n} Affiliations)',
-                width=1000,
-                height=1000,
-                xaxis=dict(showgrid=False, zeroline=False, visible=False, range=[0, 1]),
-                yaxis=dict(showgrid=False, zeroline=False, visible=False, range=[0, 1]),
-                showlegend=False,
-                plot_bgcolor='white',
-                hovermode='closest',
-                annotations=[
-                    dict(
-                        x=0.5,
-                        y=0.5,
-                        xref='paper',
-                        yref='paper',
-                        text=f'Total collaborations: {len(chord_data)}<br>Total weight: {sum(c["value"] for c in chord_data):.0f}',
-                        showarrow=False,
-                        font=dict(size=11),
-                        bgcolor='rgba(255,255,255,0.9)',
-                        bordercolor='black',
-                        borderwidth=1
-                    )
-                ]
-            )
             
             # Сохраняем данные
             self.plot_data['affiliation_chord_diagram'] = {
-                'top_affiliations': top_aff_names,
-                'short_names': short_aff_names,
-                'matrix': matrix.tolist(),
-                'weights': dict(filtered_weights),
-                'total_weight': sum(filtered_weights.values())
+                'matrix': collaboration_matrix.tolist(),
+                'affiliations': active_affiliations,
+                'total_collaborations': int(collaboration_matrix.sum() / 2)
             }
+            
+            # Создаем диаграмму хорд с plotly
+            fig = go.Figure()
+            
+            # Сокращаем названия для читаемости
+            short_labels = []
+            for aff in active_affiliations:
+                if len(aff) > 30:
+                    # Берем последнюю часть названия (обычно университет или организация)
+                    parts = aff.split()
+                    if len(parts) > 2:
+                        short = ' '.join(parts[-2:])
+                    else:
+                        short = aff[:27] + '...'
+                    short_labels.append(short)
+                else:
+                    short_labels.append(aff)
+            
+            # Создаем диаграмму хорд
+            fig.add_trace(go.Chord(
+                matrix=collaboration_matrix,
+                labels=short_labels,
+                colorscale='Viridis',
+                line=dict(color='black', width=0.5),
+                hoverinfo='all',
+                hovertemplate='%{source.label} → %{target.label}<br>Collaborations: %{value}<extra></extra>'
+            ))
+            
+            fig.update_layout(
+                title=f'Affiliation Collaboration Chord Diagram (Top {len(active_affiliations)} Affiliations)',
+                font_size=10,
+                width=1200,
+                height=1000,
+                showlegend=False,
+                margin=dict(t=100, l=50, r=50, b=50)
+            )
             
             return fig
             
