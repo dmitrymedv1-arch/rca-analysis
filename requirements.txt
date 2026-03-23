@@ -13,3 +13,6 @@ streamlit>=1.25.0
 streamlit-option-menu>=0.3.0
 plotly-express>=0.4.0
 scipy>=1.10.0
+holoviews
+bokeh
+colorcet
