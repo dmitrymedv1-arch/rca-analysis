@@ -284,7 +284,1012 @@ class ScientificDataAnalyzer:
         return df_processed
     
     # ============================================================================
-    # ФУНКЦИИ ДЛЯ ПОСТРОЕНИЯ ГРАФИКОВ (23 ВИДА)
+    # НОВАЯ ФУНКЦИЯ: ХОРДОВАЯ ДИАГРАММА ДЛЯ СТРАН
+    # ============================================================================
+    
+    def plot_country_chord_diagram(self, top_n=30):
+        """Хордовая диаграмма сотрудничества между странами с градиентными хордами"""
+        try:
+            if 'countries_list' not in self.df_processed.columns:
+                return None
+            
+            # Собираем пары стран и веса
+            country_pairs = []
+            country_weights = defaultdict(float)
+            
+            for idx, row in self.df_processed.iterrows():
+                if isinstance(row['countries_list'], list) and len(row['countries_list']) >= 2:
+                    countries = [c.strip().upper() for c in row['countries_list']]
+                    weight = row.get('count', 1)
+                    
+                    # Добавляем пары
+                    for i in range(len(countries)):
+                        for j in range(i+1, len(countries)):
+                            pair = tuple(sorted([countries[i], countries[j]]))
+                            country_weights[pair] += weight
+                            country_pairs.append({
+                                'country1': countries[i],
+                                'country2': countries[j],
+                                'weight': weight
+                            })
+            
+            if len(country_weights) == 0:
+                self.log_warning("No country pairs found for chord diagram")
+                return None
+            
+            # Получаем топ стран по общей активности
+            country_total_weights = defaultdict(float)
+            for (c1, c2), w in country_weights.items():
+                country_total_weights[c1] += w
+                country_total_weights[c2] += w
+            
+            top_countries = sorted(country_total_weights.items(), key=lambda x: x[1], reverse=True)[:top_n]
+            top_country_names = [c[0] for c in top_countries]
+            
+            # Фильтруем связи между топ странами
+            filtered_weights = {}
+            for (c1, c2), w in country_weights.items():
+                if c1 in top_country_names and c2 in top_country_names:
+                    filtered_weights[(c1, c2)] = w
+            
+            if len(filtered_weights) == 0:
+                self.log_warning("Insufficient connections between top countries")
+                return None
+            
+            # Создаем матрицу связей
+            n = len(top_country_names)
+            matrix = np.zeros((n, n))
+            country_to_idx = {country: i for i, country in enumerate(top_country_names)}
+            
+            for (c1, c2), w in filtered_weights.items():
+                i, j = country_to_idx[c1], country_to_idx[c2]
+                matrix[i, j] = w
+                matrix[j, i] = w
+            
+            # Создаем цветовую палитру для стран
+            colors = []
+            color_palette = px.colors.qualitative.Set3 + px.colors.qualitative.Pastel + px.colors.qualitative.Bold
+            for i in range(n):
+                colors.append(color_palette[i % len(color_palette)])
+            
+            # Создаем хордовую диаграмму с градиентными хордами
+            fig = go.Figure()
+            
+            # Создаем данные для хорд с градиентом
+            chord_data = []
+            for i in range(n):
+                for j in range(i+1, n):
+                    if matrix[i, j] > 0:
+                        chord_data.append({
+                            'source': i,
+                            'target': j,
+                            'value': matrix[i, j],
+                            'source_color': colors[i],
+                            'target_color': colors[j]
+                        })
+            
+            # Добавляем хорды с градиентом (создаем отдельные хорды для каждого направления градиента)
+            for chord in chord_data:
+                # Создаем градиентные хорды: первая половина от source к середине, вторая от середины к target
+                # Для plotly используем несколько сегментов с плавным переходом цвета
+                fig.add_trace(go.Sankey(
+                    node=dict(
+                        pad=15,
+                        thickness=20,
+                        line=dict(color="black", width=0.5),
+                        label=top_country_names,
+                        color=colors,
+                        x=[np.sin(2 * np.pi * i / n) * 0.8 + 0.5 for i in range(n)],
+                        y=[np.cos(2 * np.pi * i / n) * 0.8 + 0.5 for i in range(n)]
+                    ),
+                    link=dict(
+                        source=[chord['source']],
+                        target=[chord['target']],
+                        value=[chord['value']],
+                        color=[f'rgba(0,0,0,0)'],  # Прозрачные для переопределения
+                        hovertemplate=f"{top_country_names[chord['source']]} → {top_country_names[chord['target']]}: {chord['value']:.0f}<extra></extra>"
+                    ),
+                    arrangement="fixed"
+                ))
+            
+            # Более простой подход: используем scatter для узлов и отдельные линии для хорд
+            fig = go.Figure()
+            
+            # Позиции узлов на круге
+            angles = np.linspace(0, 2 * np.pi, n, endpoint=False)
+            radius = 0.8
+            x_positions = radius * np.cos(angles) + 0.5
+            y_positions = radius * np.sin(angles) + 0.5
+            
+            # Добавляем узлы как scatter точки
+            fig.add_trace(go.Scatter(
+                x=x_positions,
+                y=y_positions,
+                mode='markers+text',
+                marker=dict(
+                    size=40,
+                    color=colors,
+                    line=dict(color='black', width=2),
+                    symbol='circle'
+                ),
+                text=top_country_names,
+                textposition='middle center',
+                textfont=dict(size=10, color='black', family='Arial Black'),
+                hoverinfo='text',
+                hovertext=[f"<b>{c}</b><br>Total weight: {country_total_weights[c]:.0f}" for c in top_country_names],
+                name='Countries'
+            ))
+            
+            # Создаем хорды с градиентом (используем линии с цветовым градиентом)
+            # Для каждой связи создаем несколько сегментов для плавного перехода цвета
+            for chord in chord_data:
+                i, j = chord['source'], chord['target']
+                value = chord['value']
+                color1 = chord['source_color']
+                color2 = chord['target_color']
+                
+                # Толщина хорды пропорциональна весу
+                line_width = max(2, min(15, value / 20))
+                
+                # Координаты точек на окружности
+                x1, y1 = x_positions[i], y_positions[i]
+                x2, y2 = x_positions[j], y_positions[j]
+                
+                # Создаем кривую Безье для хорды
+                # Контрольная точка для кривой (внутри круга)
+                cx = (x1 + x2) / 2
+                cy = (y1 + y2) / 2
+                
+                # Нормализуем контрольную точку для плавной кривой
+                dist = np.sqrt((cx - 0.5)**2 + (cy - 0.5)**2)
+                if dist > 0:
+                    cx = 0.5 + (cx - 0.5) * 0.6 / dist
+                    cy = 0.5 + (cy - 0.5) * 0.6 / dist
+                
+                # Создаем параметрическую кривую
+                t = np.linspace(0, 1, 100)
+                # Квадратичная кривая Безье
+                curve_x = (1-t)**2 * x1 + 2*(1-t)*t * cx + t**2 * x2
+                curve_y = (1-t)**2 * y1 + 2*(1-t)*t * cy + t**2 * y2
+                
+                # Создаем градиент цвета вдоль кривой
+                # Разбиваем кривую на сегменты и каждый сегмент красим с плавным переходом
+                for k in range(len(t)-1):
+                    # Цвет в начале и конце сегмента
+                    t_mid = (t[k] + t[k+1]) / 2
+                    # Интерполяция цвета
+                    r1, g1, b1 = int(color1[1:3], 16), int(color1[3:5], 16), int(color1[5:7], 16)
+                    r2, g2, b2 = int(color2[1:3], 16), int(color2[3:5], 16), int(color2[5:7], 16)
+                    r = r1 * (1 - t_mid) + r2 * t_mid
+                    g = g1 * (1 - t_mid) + g2 * t_mid
+                    b = b1 * (1 - t_mid) + b2 * t_mid
+                    segment_color = f'rgb({int(r)}, {int(g)}, {int(b)})'
+                    
+                    fig.add_trace(go.Scatter(
+                        x=[curve_x[k], curve_x[k+1]],
+                        y=[curve_y[k], curve_y[k+1]],
+                        mode='lines',
+                        line=dict(width=line_width, color=segment_color, shape='spline'),
+                        hoverinfo='none',
+                        showlegend=False
+                    ))
+            
+            # Добавляем внутренний круг для эстетики
+            theta = np.linspace(0, 2 * np.pi, 100)
+            inner_radius = radius - 0.12
+            inner_x = inner_radius * np.cos(theta) + 0.5
+            inner_y = inner_radius * np.sin(theta) + 0.5
+            
+            fig.add_trace(go.Scatter(
+                x=inner_x,
+                y=inner_y,
+                mode='lines',
+                line=dict(color='white', width=2),
+                fill='toself',
+                fillcolor='rgba(255,255,255,0.8)',
+                hoverinfo='none',
+                showlegend=False
+            ))
+            
+            # Добавляем внешний круг
+            outer_x = radius * np.cos(theta) + 0.5
+            outer_y = radius * np.sin(theta) + 0.5
+            
+            fig.add_trace(go.Scatter(
+                x=outer_x,
+                y=outer_y,
+                mode='lines',
+                line=dict(color='gray', width=1, dash='dot'),
+                hoverinfo='none',
+                showlegend=False
+            ))
+            
+            fig.update_layout(
+                title=f'Country Collaboration Chord Diagram (Top {top_n} Countries)',
+                width=900,
+                height=900,
+                xaxis=dict(showgrid=False, zeroline=False, visible=False, range=[0, 1]),
+                yaxis=dict(showgrid=False, zeroline=False, visible=False, range=[0, 1]),
+                showlegend=False,
+                plot_bgcolor='white',
+                hovermode='closest',
+                annotations=[
+                    dict(
+                        x=0.5,
+                        y=0.5,
+                        xref='paper',
+                        yref='paper',
+                        text=f'Total collaborations: {len(chord_data)}<br>Total weight: {sum(c["value"] for c in chord_data):.0f}',
+                        showarrow=False,
+                        font=dict(size=12),
+                        bgcolor='rgba(255,255,255,0.9)',
+                        bordercolor='black',
+                        borderwidth=1
+                    )
+                ]
+            )
+            
+            # Сохраняем данные
+            self.plot_data['country_chord_diagram'] = {
+                'top_countries': top_country_names,
+                'matrix': matrix.tolist(),
+                'weights': dict(filtered_weights),
+                'total_weight': sum(filtered_weights.values())
+            }
+            
+            return fig
+            
+        except Exception as e:
+            self.log_error(f"Error in plot_country_chord_diagram: {str(e)}", traceback.format_exc())
+            return None
+    
+    # ============================================================================
+    # НОВАЯ ФУНКЦИЯ: ХОРДОВАЯ ДИАГРАММА ДЛЯ АФФИЛИАЦИЙ
+    # ============================================================================
+    
+    def plot_affiliation_chord_diagram(self, top_n=30):
+        """Хордовая диаграмма сотрудничества между аффилиациями с градиентными хордами"""
+        try:
+            if 'affiliations_list' not in self.df_processed.columns:
+                return None
+            
+            # Собираем пары аффилиаций и веса
+            aff_pairs = []
+            aff_weights = defaultdict(float)
+            
+            for idx, row in self.df_processed.iterrows():
+                if isinstance(row['affiliations_list'], list) and len(row['affiliations_list']) >= 2:
+                    affs = [a.strip() for a in row['affiliations_list']]
+                    weight = row.get('count', 1)
+                    
+                    # Добавляем пары
+                    for i in range(len(affs)):
+                        for j in range(i+1, len(affs)):
+                            pair = tuple(sorted([affs[i], affs[j]]))
+                            aff_weights[pair] += weight
+                            aff_pairs.append({
+                                'aff1': affs[i],
+                                'aff2': affs[j],
+                                'weight': weight
+                            })
+            
+            if len(aff_weights) == 0:
+                self.log_warning("No affiliation pairs found for chord diagram")
+                return None
+            
+            # Получаем топ аффилиации по общей активности
+            aff_total_weights = defaultdict(float)
+            for (a1, a2), w in aff_weights.items():
+                aff_total_weights[a1] += w
+                aff_total_weights[a2] += w
+            
+            top_affs = sorted(aff_total_weights.items(), key=lambda x: x[1], reverse=True)[:top_n]
+            top_aff_names = [a[0] for a in top_affs]
+            
+            # Сокращаем длинные названия для отображения
+            short_aff_names = []
+            for aff in top_aff_names:
+                if len(aff) > 25:
+                    words = aff.split()
+                    if len(words) > 3:
+                        short_aff = ' '.join(words[:3]) + '...'
+                    else:
+                        short_aff = aff[:22] + '...'
+                else:
+                    short_aff = aff
+                short_aff_names.append(short_aff)
+            
+            # Фильтруем связи между топ аффилиациями
+            filtered_weights = {}
+            for (a1, a2), w in aff_weights.items():
+                if a1 in top_aff_names and a2 in top_aff_names:
+                    filtered_weights[(a1, a2)] = w
+            
+            if len(filtered_weights) == 0:
+                self.log_warning("Insufficient connections between top affiliations")
+                return None
+            
+            # Создаем матрицу связей
+            n = len(top_aff_names)
+            matrix = np.zeros((n, n))
+            aff_to_idx = {aff: i for i, aff in enumerate(top_aff_names)}
+            
+            for (a1, a2), w in filtered_weights.items():
+                i, j = aff_to_idx[a1], aff_to_idx[a2]
+                matrix[i, j] = w
+                matrix[j, i] = w
+            
+            # Создаем цветовую палитру для аффилиаций
+            colors = []
+            color_palette = px.colors.qualitative.Set3 + px.colors.qualitative.Pastel + px.colors.qualitative.Bold + px.colors.qualitative.Dark24
+            for i in range(n):
+                colors.append(color_palette[i % len(color_palette)])
+            
+            # Создаем данные для хорд
+            chord_data = []
+            for i in range(n):
+                for j in range(i+1, n):
+                    if matrix[i, j] > 0:
+                        chord_data.append({
+                            'source': i,
+                            'target': j,
+                            'value': matrix[i, j],
+                            'source_color': colors[i],
+                            'target_color': colors[j]
+                        })
+            
+            # Создаем хордовую диаграмму
+            fig = go.Figure()
+            
+            # Позиции узлов на круге
+            angles = np.linspace(0, 2 * np.pi, n, endpoint=False)
+            radius = 0.8
+            x_positions = radius * np.cos(angles) + 0.5
+            y_positions = radius * np.sin(angles) + 0.5
+            
+            # Добавляем узлы как scatter точки
+            fig.add_trace(go.Scatter(
+                x=x_positions,
+                y=y_positions,
+                mode='markers+text',
+                marker=dict(
+                    size=35,
+                    color=colors,
+                    line=dict(color='black', width=1.5),
+                    symbol='circle'
+                ),
+                text=short_aff_names,
+                textposition='middle center',
+                textfont=dict(size=9, color='black', family='Arial'),
+                hoverinfo='text',
+                hovertext=[f"<b>{aff}</b><br>Total collaborations: {aff_total_weights[aff]:.0f}" for aff in top_aff_names],
+                name='Affiliations'
+            ))
+            
+            # Создаем хорды с градиентом
+            for chord in chord_data:
+                i, j = chord['source'], chord['target']
+                value = chord['value']
+                color1 = chord['source_color']
+                color2 = chord['target_color']
+                
+                # Толщина хорды пропорциональна весу
+                line_width = max(1.5, min(12, value / 30))
+                
+                # Координаты точек на окружности
+                x1, y1 = x_positions[i], y_positions[i]
+                x2, y2 = x_positions[j], y_positions[j]
+                
+                # Создаем кривую Безье
+                cx = (x1 + x2) / 2
+                cy = (y1 + y2) / 2
+                
+                dist = np.sqrt((cx - 0.5)**2 + (cy - 0.5)**2)
+                if dist > 0:
+                    cx = 0.5 + (cx - 0.5) * 0.65 / dist
+                    cy = 0.5 + (cy - 0.5) * 0.65 / dist
+                
+                # Параметрическая кривая
+                t = np.linspace(0, 1, 80)
+                curve_x = (1-t)**2 * x1 + 2*(1-t)*t * cx + t**2 * x2
+                curve_y = (1-t)**2 * y1 + 2*(1-t)*t * cy + t**2 * y2
+                
+                # Разбиваем на сегменты с градиентом
+                for k in range(len(t)-1):
+                    t_mid = (t[k] + t[k+1]) / 2
+                    r1, g1, b1 = int(color1[1:3], 16), int(color1[3:5], 16), int(color1[5:7], 16)
+                    r2, g2, b2 = int(color2[1:3], 16), int(color2[3:5], 16), int(color2[5:7], 16)
+                    r = r1 * (1 - t_mid) + r2 * t_mid
+                    g = g1 * (1 - t_mid) + g2 * t_mid
+                    b = b1 * (1 - t_mid) + b2 * t_mid
+                    segment_color = f'rgb({int(r)}, {int(g)}, {int(b)})'
+                    
+                    fig.add_trace(go.Scatter(
+                        x=[curve_x[k], curve_x[k+1]],
+                        y=[curve_y[k], curve_y[k+1]],
+                        mode='lines',
+                        line=dict(width=line_width, color=segment_color, shape='spline'),
+                        hoverinfo='none',
+                        showlegend=False
+                    ))
+            
+            # Внутренний круг
+            theta = np.linspace(0, 2 * np.pi, 100)
+            inner_radius = radius - 0.12
+            inner_x = inner_radius * np.cos(theta) + 0.5
+            inner_y = inner_radius * np.sin(theta) + 0.5
+            
+            fig.add_trace(go.Scatter(
+                x=inner_x,
+                y=inner_y,
+                mode='lines',
+                line=dict(color='white', width=2),
+                fill='toself',
+                fillcolor='rgba(255,255,255,0.85)',
+                hoverinfo='none',
+                showlegend=False
+            ))
+            
+            # Внешний круг
+            outer_x = radius * np.cos(theta) + 0.5
+            outer_y = radius * np.sin(theta) + 0.5
+            
+            fig.add_trace(go.Scatter(
+                x=outer_x,
+                y=outer_y,
+                mode='lines',
+                line=dict(color='gray', width=1, dash='dot'),
+                hoverinfo='none',
+                showlegend=False
+            ))
+            
+            fig.update_layout(
+                title=f'Affiliation Collaboration Chord Diagram (Top {top_n} Affiliations)',
+                width=1000,
+                height=1000,
+                xaxis=dict(showgrid=False, zeroline=False, visible=False, range=[0, 1]),
+                yaxis=dict(showgrid=False, zeroline=False, visible=False, range=[0, 1]),
+                showlegend=False,
+                plot_bgcolor='white',
+                hovermode='closest',
+                annotations=[
+                    dict(
+                        x=0.5,
+                        y=0.5,
+                        xref='paper',
+                        yref='paper',
+                        text=f'Total collaborations: {len(chord_data)}<br>Total weight: {sum(c["value"] for c in chord_data):.0f}',
+                        showarrow=False,
+                        font=dict(size=11),
+                        bgcolor='rgba(255,255,255,0.9)',
+                        bordercolor='black',
+                        borderwidth=1
+                    )
+                ]
+            )
+            
+            # Сохраняем данные
+            self.plot_data['affiliation_chord_diagram'] = {
+                'top_affiliations': top_aff_names,
+                'short_names': short_aff_names,
+                'matrix': matrix.tolist(),
+                'weights': dict(filtered_weights),
+                'total_weight': sum(filtered_weights.values())
+            }
+            
+            return fig
+            
+        except Exception as e:
+            self.log_error(f"Error in plot_affiliation_chord_diagram: {str(e)}", traceback.format_exc())
+            return None
+    
+    # ============================================================================
+    # МОДИФИЦИРОВАННАЯ ФУНКЦИЯ: SANKEY С ВОЗМОЖНОСТЬЮ ВЫБОРА КОЛИЧЕСТВА FIELD
+    # ============================================================================
+    
+    def plot_19_hierarchical_sankey(self, top_n_fields=10):
+        """19. Иерархическая диаграмма Санки: Domain → Field → Subfield → Topic
+           top_n_fields: количество топ полей для отображения"""
+        try:
+            required_cols = ['Domain', 'Field', 'Subfield', 'Topic', 'max_citations']
+            available_cols = [col for col in required_cols if col in self.df_processed.columns]
+            
+            if len(available_cols) < 3:
+                return None
+            
+            valid_data = self.df_processed.dropna(subset=available_cols)
+            if len(valid_data) < 10:
+                return None
+            
+            # Агрегируем веса (суммарные цитирования) по полям для выбора топ полей
+            field_stats = valid_data.groupby('Field').agg({
+                'max_citations': 'sum'
+            }).reset_index()
+            
+            # Получаем топ поля
+            top_fields = field_stats.nlargest(top_n_fields, 'max_citations')['Field'].tolist()
+            
+            # Фильтруем данные только по топ полям
+            filtered_data = valid_data[valid_data['Field'].isin(top_fields)]
+            
+            # Создаем иерархические связи
+            links = []
+            nodes = []
+            node_indices = {}
+            
+            def add_node(name):
+                if name not in node_indices:
+                    node_indices[name] = len(nodes)
+                    nodes.append(name)
+                return node_indices[name]
+            
+            # Агрегируем веса (суммарные цитирования)
+            hierarchy_data = filtered_data.groupby(['Domain', 'Field', 'Subfield', 'Topic']).agg({
+                'max_citations': 'sum',
+                'count': 'size'
+            }).reset_index()
+            
+            for _, row in hierarchy_data.iterrows():
+                domain = str(row['Domain']) if pd.notna(row['Domain']) else 'Unknown'
+                field = str(row['Field']) if pd.notna(row['Field']) else 'Unknown'
+                subfield = str(row['Subfield']) if pd.notna(row['Subfield']) else 'Unknown'
+                topic = str(row['Topic']) if pd.notna(row['Topic']) else 'Unknown'
+                weight = row['max_citations']
+                
+                if weight <= 0:
+                    continue
+                
+                # Добавляем связи
+                domain_idx = add_node(domain)
+                field_idx = add_node(field)
+                subfield_idx = add_node(subfield)
+                topic_idx = add_node(topic)
+                
+                links.append({'source': domain_idx, 'target': field_idx, 'value': weight})
+                links.append({'source': field_idx, 'target': subfield_idx, 'value': weight})
+                links.append({'source': subfield_idx, 'target': topic_idx, 'value': weight})
+            
+            # Сохраняем данные
+            self.plot_data['19_hierarchical_sankey'] = {
+                'nodes': nodes,
+                'links': links,
+                'top_fields': top_fields,
+                'total_weight': sum([l['value'] for l in links])
+            }
+            
+            # Создаем диаграмму Санки с plotly
+            fig = go.Figure(data=[go.Sankey(
+                node=dict(
+                    pad=15,
+                    thickness=20,
+                    line=dict(color="rgba(0,0,0,0)", width=0),
+                    label=nodes,
+                    color="blue",
+                    hovertemplate='%{label}<br>Value: %{value}<extra></extra>'
+                ),
+                link=dict(
+                    source=[l['source'] for l in links],
+                    target=[l['target'] for l in links],
+                    value=[l['value'] for l in links]
+                )
+            )])
+            
+            fig.update_layout(
+                title_text=f"Hierarchical Knowledge Structure: Domain → Field → Subfield → Topic<br>(Top {top_n_fields} Fields by Citation Impact)",
+                font_size=12,
+                width=1200,
+                height=800,
+                font=dict(
+                    family="Arial, sans-serif",
+                    size=12,
+                    color="black"
+                )
+            )
+            
+            fig.update_traces(
+                textfont=dict(
+                    family="Arial, sans-serif",
+                    size=11,
+                    color="black"
+                ),
+                selector=dict(type='sankey')
+            )
+            
+            return fig
+            
+        except Exception as e:
+            self.log_error(f"Error in plot_19_hierarchical_sankey: {str(e)}")
+            return None
+    
+    # ============================================================================
+    # МОДИФИЦИРОВАННЫЕ ФУНКЦИИ С ЧЕКБОКСАМИ ДЛЯ РЕГРЕССИИ
+    # ============================================================================
+    
+    def plot_5_collaboration_vs_citations_linear(self, show_regression=True):
+        """5. Зависимость цитирований от коллабораций (Линейная шкала)"""
+        try:
+            required_cols = ['author count', 'num_affiliations', 'num_countries', 'max_citations']
+            if not all(col in self.df_processed.columns for col in required_cols):
+                return None
+            
+            valid_data = self.df_processed.dropna(subset=required_cols)
+            if len(valid_data) < 10:
+                return None
+            
+            fig, axes = plt.subplots(1, 3, figsize=(18, 6))
+            fig.suptitle('Collaboration Scale vs Citation Impact (Linear Scale)', 
+                        fontweight='bold', fontsize=16)
+            
+            metrics = [
+                ('author count', 'Number of Authors', axes[0]),
+                ('num_affiliations', 'Number of Affiliations', axes[1]),
+                ('num_countries', 'Number of Countries', axes[2])
+            ]
+            
+            for idx, (metric, label, ax) in enumerate(metrics):
+                scatter = ax.scatter(valid_data[metric],
+                                   valid_data['max_citations'],
+                                   c=valid_data['num_countries'] if metric != 'num_countries' else valid_data['author count'],
+                                   s=valid_data['author count'] * 10,
+                                   alpha=0.6,
+                                   cmap='viridis',
+                                   edgecolors='black',
+                                   linewidth=0.5)
+                
+                # Линейная регрессия (если включена)
+                if show_regression and len(valid_data) > 10:
+                    x = valid_data[metric].values
+                    y = valid_data['max_citations'].values
+                    mask = ~(np.isnan(x) | np.isnan(y))
+                    if mask.sum() > 10:
+                        slope, intercept, r_value, p_value, std_err = stats.linregress(x[mask], y[mask])
+                        x_line = np.linspace(x[mask].min(), x[mask].max(), 100)
+                        y_line = intercept + slope * x_line
+                        ax.plot(x_line, y_line, 'r--', linewidth=2, 
+                               label=f'r = {r_value:.3f}, p = {p_value:.3f}')
+                
+                ax.set_xlabel(label, fontweight='bold')
+                ax.set_ylabel('Maximum Citations (max(CR, OA))', fontweight='bold')
+                ax.set_title(f'{label} vs Citations', fontweight='bold')
+                if show_regression:
+                    ax.legend(loc='upper left', fontsize=8)
+                ax.grid(True, alpha=0.3)
+                
+                if idx < 2:
+                    cbar = plt.colorbar(scatter, ax=ax)
+                    cbar_label = 'Number of Countries' if metric != 'num_countries' else 'Number of Authors'
+                    cbar.set_label(cbar_label, fontweight='bold')
+            
+            # Сохраняем данные
+            self.plot_data['5_collaboration_vs_citations_linear'] = valid_data[required_cols].to_dict('records')
+            
+            plt.tight_layout()
+            return fig
+            
+        except Exception as e:
+            self.log_error(f"Error in plot_5_collaboration_vs_citations_linear: {str(e)}")
+            return None
+    
+    def plot_6_collaboration_vs_citations_log(self, show_regression=True):
+        """6. Зависимость цитирований от коллабораций (логарифмическая шкала только для Y)"""
+        try:
+            required_cols = ['author count', 'num_affiliations', 'num_countries', 'max_citations']
+            if not all(col in self.df_processed.columns for col in required_cols):
+                return None
+            
+            valid_data = self.df_processed.dropna(subset=required_cols)
+            if len(valid_data) < 10:
+                return None
+            
+            fig, axes = plt.subplots(1, 3, figsize=(18, 6))
+            fig.suptitle('Collaboration Scale vs Citation Impact (Log Y Scale)', 
+                        fontweight='bold', fontsize=16)
+            
+            metrics = [
+                ('author count', 'Number of Authors', axes[0]),
+                ('num_affiliations', 'Number of Affiliations', axes[1]),
+                ('num_countries', 'Number of Countries', axes[2])
+            ]
+            
+            for idx, (metric, label, ax) in enumerate(metrics):
+                # Фильтруем данные > 0 для логарифмической шкалы по Y
+                plot_data = valid_data[valid_data['max_citations'] > 0].copy()
+                if len(plot_data) < 10:
+                    continue
+                
+                # Создаем scatter plot
+                scatter = ax.scatter(plot_data[metric],
+                                   plot_data['max_citations'],
+                                   c=plot_data['num_countries'] if metric != 'num_countries' else plot_data['author count'],
+                                   s=plot_data['author count'] * 10,
+                                   alpha=0.6,
+                                   cmap='viridis',
+                                   edgecolors='black',
+                                   linewidth=0.5)
+                
+                # Экспоненциальная регрессия (log Y) (если включена)
+                if show_regression and len(plot_data) > 10:
+                    x = plot_data[metric].values
+                    log_y = np.log(plot_data['max_citations'].values)
+                    
+                    # Убираем бесконечные значения
+                    mask = np.isfinite(log_y)
+                    if mask.sum() > 10:
+                        slope, intercept, r_value, p_value, std_err = stats.linregress(x[mask], log_y[mask])
+                        x_line = np.linspace(x[mask].min(), x[mask].max(), 100)
+                        y_line = np.exp(intercept + slope * x_line)
+                        ax.plot(x_line, y_line, 'r--', linewidth=2, 
+                               label=f'exponential: y ∝ exp({slope:.3f}x), r = {r_value:.3f}')
+                
+                ax.set_xlabel(label, fontweight='bold')
+                ax.set_ylabel('Maximum Citations (max(CR, OA)) - Log Scale', fontweight='bold')
+                ax.set_title(f'{label} vs Citations (Log Y Scale)', fontweight='bold')
+                
+                # Устанавливаем логарифмическую шкалу только для оси Y
+                ax.set_yscale('log')
+                
+                if show_regression:
+                    ax.legend(loc='upper left', fontsize=8)
+                ax.grid(True, alpha=0.3, which='both')
+                
+                # Добавляем цветовую шкалу
+                cbar = plt.colorbar(scatter, ax=ax)
+                if metric != 'num_countries':
+                    cbar.set_label('Number of Countries', fontweight='bold', fontsize=10)
+                else:
+                    cbar.set_label('Number of Authors', fontweight='bold', fontsize=10)
+                
+                # Добавляем легенду для размера пузырьков
+                from matplotlib.lines import Line2D
+                legend_elements = []
+                
+                # Определяем размеры пузырьков для легенды
+                size_values = [2, 5, 10, 15]
+                for n_authors in size_values:
+                    if n_authors <= plot_data['author count'].max():
+                        marker_size = n_authors * 10
+                        legend_elements.append(Line2D([0], [0], marker='o', color='w',
+                                                     markerfacecolor='gray', 
+                                                     markersize=np.sqrt(marker_size),
+                                                     label=f'{n_authors} authors'))
+                
+                if legend_elements:
+                    ax.legend(handles=legend_elements, title='Bubble size = Team size',
+                             loc='lower right', fontsize=8, title_fontsize=9)
+            
+            # Сохраняем данные
+            self.plot_data['6_collaboration_vs_citations_log'] = valid_data[required_cols].to_dict('records')
+            
+            plt.tight_layout()
+            return fig
+            
+        except Exception as e:
+            self.log_error(f"Error in plot_6_collaboration_vs_citations_log: {str(e)}")
+            return None
+    
+    def plot_6_1_bubble_chart(self, show_regression=True):
+        """6.1 Пузырьковая диаграмма: References vs Citations (линейная шкала)"""
+        try:
+            required_cols = ['references_count', 'Citation counts (CR)', 'author count', 'num_countries']
+            if not all(col in self.df_processed.columns for col in required_cols):
+                return None
+            
+            valid_data = self.df_processed.dropna(subset=required_cols)
+            if len(valid_data) < 10:
+                return None
+            
+            fig, ax = plt.subplots(figsize=(14, 10))
+            
+            scatter = ax.scatter(valid_data['references_count'],
+                               valid_data['Citation counts (CR)'],
+                               s=valid_data['author count'] * 40,
+                               c=valid_data['num_countries'],
+                               cmap='coolwarm',
+                               alpha=0.7,
+                               edgecolors='black',
+                               linewidth=0.5)
+            
+            # Линейная регрессия (если включена)
+            if show_regression and len(valid_data) > 10:
+                x = valid_data['references_count'].values
+                y = valid_data['Citation counts (CR)'].values
+                mask = ~(np.isnan(x) | np.isnan(y))
+                if mask.sum() > 10:
+                    slope, intercept, r_value, p_value, std_err = stats.linregress(x[mask], y[mask])
+                    x_line = np.linspace(x[mask].min(), x[mask].max(), 100)
+                    y_line = intercept + slope * x_line
+                    ax.plot(x_line, y_line, 'r--', linewidth=2, 
+                           label=f'r = {r_value:.3f}, p = {p_value:.3f}')
+            
+            ax.set_xlabel('Number of References', fontweight='bold')
+            ax.set_ylabel('Total Citations (CR) - Linear Scale', fontweight='bold')
+            ax.set_title('Research Breadth vs Impact (Linear Scale)',
+                        fontweight='bold', fontsize=16)
+            
+            cbar = plt.colorbar(scatter, ax=ax)
+            cbar.set_label('Number of Collaborating Countries', fontweight='bold')
+            
+            # Легенда для размеров
+            sizes = [5, 10, 15]
+            labels = ['5 authors', '10 authors', '15 authors']
+            legend_elements = [plt.scatter([], [], s=size*40, c='gray', alpha=0.7,
+                                          edgecolors='black', label=label)
+                              for size, label in zip(sizes, labels)]
+            
+            if show_regression:
+                ax.legend(handles=legend_elements + [plt.Line2D([0], [0], color='red', linestyle='--', label='Regression line')], 
+                         title='Legend', loc='upper left')
+            else:
+                ax.legend(handles=legend_elements, title='Team Size', loc='upper left')
+            
+            ax.grid(True, alpha=0.3)
+            
+            # Сохраняем данные
+            self.plot_data['6_1_bubble_chart'] = valid_data[required_cols].to_dict('records')
+            
+            plt.tight_layout()
+            return fig
+            
+        except Exception as e:
+            self.log_error(f"Error in plot_6_1_bubble_chart: {str(e)}")
+            return None
+    
+    def plot_6_2_bubble_chart(self, show_regression=True):
+        """6.2 Пузырьковая диаграмма: References vs Citations (логарифмическая шкала)"""
+        try:
+            required_cols = ['references_count', 'Citation counts (CR)', 'author count', 'num_countries']
+            if not all(col in self.df_processed.columns for col in required_cols):
+                return None
+            
+            valid_data = self.df_processed.dropna(subset=required_cols)
+            if len(valid_data) < 10:
+                return None
+            
+            fig, ax = plt.subplots(figsize=(14, 10))
+            
+            # Фильтруем данные для логарифмической шкалы
+            valid_log_data = valid_data[valid_data['Citation counts (CR)'] > 0].copy()
+            if len(valid_log_data) < 10:
+                self.log_warning("Insufficient positive citation values for log scale")
+                return None
+            
+            scatter = ax.scatter(valid_log_data['references_count'],
+                               valid_log_data['Citation counts (CR)'],
+                               s=valid_log_data['author count'] * 40,
+                               c=valid_log_data['num_countries'],
+                               cmap='coolwarm',
+                               alpha=0.7,
+                               edgecolors='black',
+                               linewidth=0.5)
+            
+            # Линейная регрессия на логарифмической шкале (если включена)
+            if show_regression and len(valid_log_data) > 10:
+                x = valid_log_data['references_count'].values
+                log_y = np.log(valid_log_data['Citation counts (CR)'].values)
+                
+                mask = np.isfinite(log_y)
+                if mask.sum() > 10:
+                    slope, intercept, r_value, p_value, std_err = stats.linregress(x[mask], log_y[mask])
+                    x_line = np.linspace(x[mask].min(), x[mask].max(), 100)
+                    y_line = np.exp(intercept + slope * x_line)
+                    ax.plot(x_line, y_line, 'r--', linewidth=2, 
+                           label=f'exponential: y ∝ exp({slope:.3f}x), r = {r_value:.3f}')
+            
+            ax.set_xlabel('Number of References', fontweight='bold')
+            ax.set_ylabel('Total Citations (CR) - Log Scale', fontweight='bold')
+            ax.set_title('Research Breadth vs Impact (Logarithmic Scale)',
+                        fontweight='bold', fontsize=16)
+            
+            # Устанавливаем логарифмическую шкалу для оси Y
+            ax.set_yscale('log')
+            
+            cbar = plt.colorbar(scatter, ax=ax)
+            cbar.set_label('Number of Collaborating Countries', fontweight='bold')
+            
+            # Легенда для размеров
+            sizes = [5, 10, 15]
+            labels = ['5 authors', '10 authors', '15 authors']
+            legend_elements = [plt.scatter([], [], s=size*40, c='gray', alpha=0.7,
+                                          edgecolors='black', label=label)
+                              for size, label in zip(sizes, labels)]
+            
+            if show_regression:
+                ax.legend(handles=legend_elements + [plt.Line2D([0], [0], color='red', linestyle='--', label='Exponential fit')], 
+                         title='Legend', loc='upper left')
+            else:
+                ax.legend(handles=legend_elements, title='Team Size', loc='upper left')
+            
+            ax.grid(True, alpha=0.3, which='both')
+            
+            # Сохраняем данные
+            self.plot_data['6_2_bubble_chart'] = valid_data[required_cols].to_dict('records')
+            
+            plt.tight_layout()
+            return fig
+            
+        except Exception as e:
+            self.log_error(f"Error in plot_6_2_bubble_chart: {str(e)}")
+            return None
+    
+    def plot_16_references_vs_impact(self, show_regression=True):
+        """16. Объем ссылок vs влияние"""
+        try:
+            required_cols = ['references_count', 'count', 'Annual cit counts (CR)']
+            if not all(col in self.df_processed.columns for col in required_cols):
+                return None
+            
+            valid_data = self.df_processed.dropna(subset=required_cols)
+            if len(valid_data) < 10:
+                return None
+            
+            fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(16, 7))
+            
+            # График 1: References vs Attention
+            scatter1 = ax1.scatter(valid_data['references_count'],
+                                 valid_data['count'],
+                                 c=valid_data['Annual cit counts (CR)'],
+                                 cmap='viridis', alpha=0.6, s=30,
+                                 edgecolors='black', linewidth=0.5)
+            
+            # Линейная регрессия (если включена)
+            if show_regression and len(valid_data) > 10:
+                x = valid_data['references_count'].values
+                y = valid_data['count'].values
+                
+                slope, intercept, r_value, p_value, std_err = stats.linregress(x, y)
+                x_line = np.linspace(x.min(), x.max(), 100)
+                y_line = intercept + slope * x_line
+                ax1.plot(x_line, y_line, 'r--', linewidth=2,
+                        label=f'r = {r_value:.3f}, p = {p_value:.3f}')
+            
+            ax1.set_xlabel('Number of References', fontweight='bold')
+            ax1.set_ylabel('Local Mentions (count)', fontweight='bold')
+            ax1.set_title('References vs Local Attention', fontweight='bold')
+            if show_regression:
+                ax1.legend()
+            ax1.grid(True, alpha=0.3)
+            
+            cbar1 = plt.colorbar(scatter1, ax=ax1)
+            cbar1.set_label('Annual Citations (CR)', fontweight='bold')
+            
+            # График 2: References vs Citations
+            scatter2 = ax2.scatter(valid_data['references_count'],
+                                 valid_data['Annual cit counts (CR)'],
+                                 c=valid_data['count'],
+                                 cmap='plasma', alpha=0.6, s=30,
+                                 edgecolors='black', linewidth=0.5)
+            
+            # Линейная регрессия (если включена)
+            if show_regression and len(valid_data) > 10:
+                x = valid_data['references_count'].values
+                y = valid_data['Annual cit counts (CR)'].values
+                slope, intercept, r_value, p_value, std_err = stats.linregress(x, y)
+                x_line = np.linspace(x.min(), x.max(), 100)
+                y_line = intercept + slope * x_line
+                ax2.plot(x_line, y_line, 'r--', linewidth=2,
+                        label=f'r = {r_value:.3f}, p = {p_value:.3f}')
+            
+            ax2.set_xlabel('Number of References', fontweight='bold')
+            ax2.set_ylabel('Annual Citations (CR)', fontweight='bold')
+            ax2.set_title('References vs Citation Impact', fontweight='bold')
+            if show_regression:
+                ax2.legend()
+            ax2.grid(True, alpha=0.3)
+            
+            cbar2 = plt.colorbar(scatter2, ax=ax2)
+            cbar2.set_label('Local Mentions', fontweight='bold')
+            
+            plt.suptitle('Impact of Reference Count on Research Metrics', fontweight='bold', fontsize=16)
+            plt.tight_layout()
+            
+            return fig
+            
+        except Exception as e:
+            self.log_error(f"Error in plot_16_references_vs_impact: {str(e)}")
+            return None
+    
+    # ============================================================================
+    # ОСТАЛЬНЫЕ ФУНКЦИИ ГРАФИКОВ (БЕЗ ИЗМЕНЕНИЙ)
     # ============================================================================
     
     def plot_1_distribution_attention(self):
@@ -362,111 +1367,6 @@ class ScientificDataAnalyzer:
             
         except Exception as e:
             self.log_error(f"Error in plot_1_distribution_attention: {str(e)}")
-            return None
-    
-    def plot_2_country_collaboration_network(self):
-        """2. Сеть коллабораций между странами"""
-        try:
-            if 'countries_list' not in self.df_processed.columns:
-                return None
-            
-            # Создаем граф
-            G = nx.Graph()
-            country_pairs = []
-            
-            for idx, row in self.df_processed.iterrows():
-                if isinstance(row['countries_list'], list) and len(row['countries_list']) >= 2:
-                    countries = [c.strip().upper() for c in row['countries_list']]
-                    weight = row.get('count', 1)
-                    
-                    # Добавляем узлы
-                    for country in countries:
-                        if not G.has_node(country):
-                            G.add_node(country, weight=0, papers=0)
-                        G.nodes[country]['weight'] += weight
-                        G.nodes[country]['papers'] += 1
-                    
-                    # Добавляем ребра между всеми парами
-                    for i in range(len(countries)):
-                        for j in range(i+1, len(countries)):
-                            if G.has_edge(countries[i], countries[j]):
-                                G[countries[i]][countries[j]]['weight'] += weight
-                                G[countries[i]][countries[j]]['papers'] += 1
-                            else:
-                                G.add_edge(countries[i], countries[j], weight=weight, papers=1)
-                            
-                            country_pairs.append({
-                                'country1': countries[i],
-                                'country2': countries[j],
-                                'weight': weight,
-                                'paper_id': idx
-                            })
-            
-            if len(G.nodes()) < 3:
-                self.log_warning("Insufficient data for country network")
-                return None
-            
-            # Сохраняем данные
-            self.plot_data['2_country_network'] = {
-                'nodes': [{'country': node, 'weight': G.nodes[node]['weight'], 
-                          'papers': G.nodes[node]['papers']} for node in G.nodes()],
-                'edges': [{'country1': u, 'country2': v, 'weight': G[u][v]['weight'],
-                          'papers': G[u][v]['papers']} for u, v in G.edges()]
-            }
-            
-            # Визуализация
-            fig, ax = plt.subplots(figsize=(14, 10))
-            
-            # Фильтруем слабые связи
-            min_weight = np.percentile([d['weight'] for u, v, d in G.edges(data=True)], 50)
-            edges_to_keep = [(u, v) for u, v, d in G.edges(data=True) if d['weight'] >= min_weight]
-            H = G.edge_subgraph([u for u, v in edges_to_keep] + [v for u, v in edges_to_keep])
-            
-            if len(H.nodes()) == 0:
-                H = G
-            
-            # Позиционирование
-            pos = nx.spring_layout(H, k=2, seed=42)
-            
-            # Размер узлов по весу
-            node_sizes = [H.nodes[n]['weight'] * 0.5 + 500 for n in H.nodes()]
-            node_colors = [H.nodes[n]['papers'] for n in H.nodes()]
-            
-            # Рисуем граф с градиентной цветовой схемой (от светлого к темному)
-            nodes = nx.draw_networkx_nodes(H, pos, node_size=node_sizes,
-                                          node_color=node_colors, cmap='Blues',
-                                          alpha=0.8, edgecolors='black', linewidths=1.5, ax=ax)
-            
-            # Ребра
-            if H.edges():
-                edge_weights = [H[u][v]['weight'] * 0.3 for u, v in H.edges()]
-                edges = nx.draw_networkx_edges(H, pos, width=edge_weights, alpha=0.7,
-                                              edge_color='gray', style='solid', ax=ax)
-            
-            # Подписи
-            nx.draw_networkx_labels(H, pos, font_size=10, font_weight='bold', ax=ax)
-            
-            ax.set_title('Country Collaboration Network', fontweight='bold', fontsize=16, pad=20)
-            ax.axis('off')
-            
-            # Цветовая шкала
-            sm = plt.cm.ScalarMappable(cmap='Blues',
-                                      norm=plt.Normalize(vmin=min(node_colors), 
-                                                       vmax=max(node_colors)))
-            sm.set_array([])
-            cbar = plt.colorbar(sm, ax=ax, shrink=0.8, pad=0.02)
-            cbar.set_label('Number of Papers', fontweight='bold', fontsize=10)
-            
-            # Статистика
-            stats_text = f"Nodes: {len(G.nodes())} | Edges: {len(G.edges())}"
-            ax.text(0.02, 0.02, stats_text, transform=ax.transAxes, fontsize=10,
-                   bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
-            
-            plt.tight_layout()
-            return fig
-            
-        except Exception as e:
-            self.log_error(f"Error in plot_2_country_collaboration_network: {str(e)}")
             return None
     
     def plot_3_internationality_vs_citations(self):
@@ -591,284 +1491,6 @@ class ScientificDataAnalyzer:
             
         except Exception as e:
             self.log_error(f"Error in plot_4_journal_year_heatmap: {str(e)}")
-            return None
-    
-    def plot_5_collaboration_vs_citations_linear(self):
-        """5. Зависимость цитирований от коллабораций (Линейная шкала)"""
-        try:
-            required_cols = ['author count', 'num_affiliations', 'num_countries', 'max_citations']
-            if not all(col in self.df_processed.columns for col in required_cols):
-                return None
-            
-            valid_data = self.df_processed.dropna(subset=required_cols)
-            if len(valid_data) < 10:
-                return None
-            
-            fig, axes = plt.subplots(1, 3, figsize=(18, 6))
-            fig.suptitle('Collaboration Scale vs Citation Impact (Linear Scale)', 
-                        fontweight='bold', fontsize=16)
-            
-            metrics = [
-                ('author count', 'Number of Authors', axes[0]),
-                ('num_affiliations', 'Number of Affiliations', axes[1]),
-                ('num_countries', 'Number of Countries', axes[2])
-            ]
-            
-            for idx, (metric, label, ax) in enumerate(metrics):
-                scatter = ax.scatter(valid_data[metric],
-                                   valid_data['max_citations'],
-                                   c=valid_data['num_countries'] if metric != 'num_countries' else valid_data['author count'],
-                                   s=valid_data['author count'] * 10,
-                                   alpha=0.6,
-                                   cmap='viridis',
-                                   edgecolors='black',
-                                   linewidth=0.5)
-                
-                # Линейная регрессия
-                if len(valid_data) > 10:
-                    x = valid_data[metric].values
-                    y = valid_data['max_citations'].values
-                    mask = ~(np.isnan(x) | np.isnan(y))
-                    if mask.sum() > 10:
-                        slope, intercept, r_value, p_value, std_err = stats.linregress(x[mask], y[mask])
-                        x_line = np.linspace(x[mask].min(), x[mask].max(), 100)
-                        y_line = intercept + slope * x_line
-                        ax.plot(x_line, y_line, 'r--', linewidth=2, 
-                               label=f'r = {r_value:.3f}, p = {p_value:.3f}')
-                
-                ax.set_xlabel(label, fontweight='bold')
-                ax.set_ylabel('Maximum Citations (max(CR, OA))', fontweight='bold')
-                ax.set_title(f'{label} vs Citations', fontweight='bold')
-                ax.legend(loc='upper left', fontsize=8)
-                ax.grid(True, alpha=0.3)
-                
-                if idx < 2:
-                    cbar = plt.colorbar(scatter, ax=ax)
-                    cbar_label = 'Number of Countries' if metric != 'num_countries' else 'Number of Authors'
-                    cbar.set_label(cbar_label, fontweight='bold')
-            
-            # Сохраняем данные
-            self.plot_data['5_collaboration_vs_citations_linear'] = valid_data[required_cols].to_dict('records')
-            
-            plt.tight_layout()
-            return fig
-            
-        except Exception as e:
-            self.log_error(f"Error in plot_5_collaboration_vs_citations_linear: {str(e)}")
-            return None
-    
-    def plot_6_collaboration_vs_citations_log(self):
-        """6. Зависимость цитирований от коллабораций (логарифмическая шкала только для Y)"""
-        try:
-            required_cols = ['author count', 'num_affiliations', 'num_countries', 'max_citations']
-            if not all(col in self.df_processed.columns for col in required_cols):
-                return None
-            
-            valid_data = self.df_processed.dropna(subset=required_cols)
-            if len(valid_data) < 10:
-                return None
-            
-            fig, axes = plt.subplots(1, 3, figsize=(18, 6))
-            fig.suptitle('Collaboration Scale vs Citation Impact (Log Y Scale)', 
-                        fontweight='bold', fontsize=16)
-            
-            metrics = [
-                ('author count', 'Number of Authors', axes[0]),
-                ('num_affiliations', 'Number of Affiliations', axes[1]),
-                ('num_countries', 'Number of Countries', axes[2])
-            ]
-            
-            for idx, (metric, label, ax) in enumerate(metrics):
-                # Фильтруем данные > 0 для логарифмической шкалы по Y
-                plot_data = valid_data[valid_data['max_citations'] > 0].copy()
-                if len(plot_data) < 10:
-                    continue
-                
-                # Создаем scatter plot
-                scatter = ax.scatter(plot_data[metric],
-                                   plot_data['max_citations'],
-                                   c=plot_data['num_countries'] if metric != 'num_countries' else plot_data['author count'],
-                                   s=plot_data['author count'] * 10,
-                                   alpha=0.6,
-                                   cmap='viridis',
-                                   edgecolors='black',
-                                   linewidth=0.5)
-                
-                # Экспоненциальная регрессия (log Y)
-                if len(plot_data) > 10:
-                    x = plot_data[metric].values
-                    log_y = np.log(plot_data['max_citations'].values)
-                    
-                    # Убираем бесконечные значения
-                    mask = np.isfinite(log_y)
-                    if mask.sum() > 10:
-                        slope, intercept, r_value, p_value, std_err = stats.linregress(x[mask], log_y[mask])
-                        x_line = np.linspace(x[mask].min(), x[mask].max(), 100)
-                        y_line = np.exp(intercept + slope * x_line)
-                        ax.plot(x_line, y_line, 'r--', linewidth=2, 
-                               label=f'exponential: y ∝ exp({slope:.3f}x), r = {r_value:.3f}')
-                
-                ax.set_xlabel(label, fontweight='bold')
-                ax.set_ylabel('Maximum Citations (max(CR, OA)) - Log Scale', fontweight='bold')
-                ax.set_title(f'{label} vs Citations (Log Y Scale)', fontweight='bold')
-                
-                # Устанавливаем логарифмическую шкалу только для оси Y
-                ax.set_yscale('log')
-                # Ось X остается линейной
-                
-                ax.legend(loc='upper left', fontsize=8)
-                ax.grid(True, alpha=0.3, which='both')
-                
-                # Добавляем цветовую шкалу
-                cbar = plt.colorbar(scatter, ax=ax)
-                if metric != 'num_countries':
-                    cbar.set_label('Number of Countries', fontweight='bold', fontsize=10)
-                else:
-                    cbar.set_label('Number of Authors', fontweight='bold', fontsize=10)
-                
-                # Добавляем легенду для размера пузырьков
-                from matplotlib.lines import Line2D
-                legend_elements = []
-                
-                # Определяем размеры пузырьков для легенды
-                size_values = [2, 5, 10, 15]  # количество авторов
-                for n_authors in size_values:
-                    if n_authors <= plot_data['author count'].max():
-                        marker_size = n_authors * 10  # соответствие размеру в scatter
-                        legend_elements.append(Line2D([0], [0], marker='o', color='w',
-                                                     markerfacecolor='gray', 
-                                                     markersize=np.sqrt(marker_size),
-                                                     label=f'{n_authors} authors'))
-                
-                if legend_elements:
-                    ax.legend(handles=legend_elements, title='Bubble size = Team size',
-                             loc='lower right', fontsize=8, title_fontsize=9)
-            
-            # Сохраняем данные
-            self.plot_data['6_collaboration_vs_citations_log'] = valid_data[required_cols].to_dict('records')
-            
-            plt.tight_layout()
-            return fig
-            
-        except Exception as e:
-            self.log_error(f"Error in plot_6_collaboration_vs_citations_log: {str(e)}")
-            return None
-    
-    def plot_6_1_bubble_chart(self):
-        """6.1 Пузырьковая диаграмма: References vs Citations (линейная шкала)"""
-        try:
-            required_cols = ['references_count', 'Citation counts (CR)', 'author count', 'num_countries']
-            if not all(col in self.df_processed.columns for col in required_cols):
-                return None
-            
-            valid_data = self.df_processed.dropna(subset=required_cols)
-            if len(valid_data) < 10:
-                return None
-            
-            fig, ax = plt.subplots(figsize=(14, 10))
-            
-            scatter = ax.scatter(valid_data['references_count'],
-                               valid_data['Citation counts (CR)'],
-                               s=valid_data['author count'] * 40,
-                               c=valid_data['num_countries'],
-                               cmap='coolwarm',
-                               alpha=0.7,
-                               edgecolors='black',
-                               linewidth=0.5)
-            
-            ax.set_xlabel('Number of References', fontweight='bold')
-            ax.set_ylabel('Total Citations (CR) - Linear Scale', fontweight='bold')
-            ax.set_title('Research Breadth vs Impact (Linear Scale)',
-                        fontweight='bold', fontsize=16)
-            
-            cbar = plt.colorbar(scatter, ax=ax)
-            cbar.set_label('Number of Collaborating Countries', fontweight='bold')
-            
-            # Легенда для размеров
-            sizes = [5, 10, 15]
-            labels = ['5 authors', '10 authors', '15 authors']
-            legend_elements = [plt.scatter([], [], s=size*40, c='gray', alpha=0.7,
-                                          edgecolors='black', label=label)
-                              for size, label in zip(sizes, labels)]
-            
-            ax.legend(handles=legend_elements, title='Team Size', loc='upper left')
-            ax.grid(True, alpha=0.3)
-            
-            # Сохраняем данные
-            self.plot_data['6_1_bubble_chart'] = valid_data[required_cols].to_dict('records')
-            
-            plt.tight_layout()
-            return fig
-            
-        except Exception as e:
-            self.log_error(f"Error in plot_6_1_bubble_chart: {str(e)}")
-            return None
-    
-    def plot_6_2_bubble_chart(self):
-        """6.2 Пузырьковая диаграмма: References vs Citations (логарифмическая шкала)"""
-        try:
-            required_cols = ['references_count', 'Citation counts (CR)', 'author count', 'num_countries']
-            if not all(col in self.df_processed.columns for col in required_cols):
-                return None
-            
-            valid_data = self.df_processed.dropna(subset=required_cols)
-            if len(valid_data) < 10:
-                return None
-            
-            fig, ax = plt.subplots(figsize=(14, 10))
-            
-            scatter = ax.scatter(valid_data['references_count'],
-                               valid_data['Citation counts (CR)'],
-                               s=valid_data['author count'] * 40,
-                               c=valid_data['num_countries'],
-                               cmap='coolwarm',
-                               alpha=0.7,
-                               edgecolors='black',
-                               linewidth=0.5)
-            
-            ax.set_xlabel('Number of References', fontweight='bold')
-            ax.set_ylabel('Total Citations (CR) - Log Scale', fontweight='bold')
-            ax.set_title('Research Breadth vs Impact (Logarithmic Scale)',
-                        fontweight='bold', fontsize=16)
-            
-            # Устанавливаем логарифмическую шкалу для оси Y
-            ax.set_yscale('log')
-            
-            # Убедимся, что значения больше 0 для логарифмической шкалы
-            min_citation = valid_data['Citation counts (CR)'].min()
-            if min_citation <= 0:
-                valid_log_data = valid_data[valid_data['Citation counts (CR)'] > 0].copy()
-                if len(valid_log_data) > 0:
-                    scatter = ax.scatter(valid_log_data['references_count'],
-                                       valid_log_data['Citation counts (CR)'],
-                                       s=valid_log_data['author count'] * 40,
-                                       c=valid_log_data['num_countries'],
-                                       cmap='coolwarm',
-                                       alpha=0.7,
-                                       edgecolors='black',
-                                       linewidth=0.5)
-            
-            cbar = plt.colorbar(scatter, ax=ax)
-            cbar.set_label('Number of Collaborating Countries', fontweight='bold')
-            
-            # Легенда для размеров
-            sizes = [5, 10, 15]
-            labels = ['5 authors', '10 authors', '15 authors']
-            legend_elements = [plt.scatter([], [], s=size*40, c='gray', alpha=0.7,
-                                          edgecolors='black', label=label)
-                              for size, label in zip(sizes, labels)]
-            
-            ax.legend(handles=legend_elements, title='Team Size', loc='upper left')
-            ax.grid(True, alpha=0.3, which='both')
-            
-            # Сохраняем данные
-            self.plot_data['6_2_bubble_chart'] = valid_data[required_cols].to_dict('records')
-            
-            plt.tight_layout()
-            return fig
-            
-        except Exception as e:
-            self.log_error(f"Error in plot_6_2_bubble_chart: {str(e)}")
             return None
     
     def plot_7_concepts_analysis(self, top_n=30):
@@ -1644,70 +2266,6 @@ class ScientificDataAnalyzer:
             return 0
         return (n + 1 - 2 * np.sum(cumx) / cumx[-1]) / n
     
-    def plot_16_references_vs_impact(self):
-        """16. Объем ссылок vs влияние"""
-        try:
-            required_cols = ['references_count', 'count', 'Annual cit counts (CR)']
-            if not all(col in self.df_processed.columns for col in required_cols):
-                return None
-            
-            valid_data = self.df_processed.dropna(subset=required_cols)
-            if len(valid_data) < 10:
-                return None
-            
-            fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(16, 7))
-            
-            # График 1: References vs Attention
-            scatter1 = ax1.scatter(valid_data['references_count'],
-                                 valid_data['count'],
-                                 c=valid_data['Annual cit counts (CR)'],
-                                 cmap='viridis', alpha=0.6, s=30,
-                                 edgecolors='black', linewidth=0.5)
-            
-            # Линейная регрессия
-            if len(valid_data) > 10:
-                x = valid_data['references_count'].values
-                y = valid_data['count'].values
-                
-                slope, intercept, r_value, p_value, std_err = stats.linregress(x, y)
-                x_line = np.linspace(x.min(), x.max(), 100)
-                y_line = intercept + slope * x_line
-                ax1.plot(x_line, y_line, 'r--', linewidth=2,
-                        label=f'r = {r_value:.3f}, p = {p_value:.3f}')
-            
-            ax1.set_xlabel('Number of References', fontweight='bold')
-            ax1.set_ylabel('Local Mentions (count)', fontweight='bold')
-            ax1.set_title('References vs Local Attention', fontweight='bold')
-            ax1.legend()
-            ax1.grid(True, alpha=0.3)
-            
-            cbar1 = plt.colorbar(scatter1, ax=ax1)
-            cbar1.set_label('Annual Citations (CR)', fontweight='bold')
-            
-            # График 2: References vs Citations
-            scatter2 = ax2.scatter(valid_data['references_count'],
-                                 valid_data['Annual cit counts (CR)'],
-                                 c=valid_data['count'],
-                                 cmap='plasma', alpha=0.6, s=30,
-                                 edgecolors='black', linewidth=0.5)
-            
-            ax2.set_xlabel('Number of References', fontweight='bold')
-            ax2.set_ylabel('Annual Citations (CR)', fontweight='bold')
-            ax2.set_title('References vs Citation Impact', fontweight='bold')
-            ax2.grid(True, alpha=0.3)
-            
-            cbar2 = plt.colorbar(scatter2, ax=ax2)
-            cbar2.set_label('Local Mentions', fontweight='bold')
-            
-            plt.suptitle('Impact of Reference Count on Research Metrics', fontweight='bold', fontsize=16)
-            plt.tight_layout()
-            
-            return fig
-            
-        except Exception as e:
-            self.log_error(f"Error in plot_16_references_vs_impact: {str(e)}")
-            return None
-    
     def plot_17_journal_impact(self):
         """17. Влияние журналов"""
         try:
@@ -1794,228 +2352,6 @@ class ScientificDataAnalyzer:
             
         except Exception as e:
             self.log_error(f"Error in plot_17_journal_impact: {str(e)}")
-            return None
-    
-    def plot_18_18_1_affiliation_network(self):
-        """18.1 Сеть аффилиаций (топ 20)"""
-        try:
-            return self._plot_affiliation_network_impl(20, "1")
-        except Exception as e:
-            self.log_error(f"Error in plot_18_18_1_affiliation_network: {str(e)}")
-            return None
-    
-    def plot_18_18_2_affiliation_network(self):
-        """18.2 Сеть аффилиаций (топ 30)"""
-        try:
-            return self._plot_affiliation_network_impl(30, "2")
-        except Exception as e:
-            self.log_error(f"Error in plot_18_18_2_affiliation_network: {str(e)}")
-            return None
-    
-    def plot_18_18_3_affiliation_network(self):
-        """18.3 Сеть аффилиаций (топ 50)"""
-        try:
-            return self._plot_affiliation_network_impl(50, "3")
-        except Exception as e:
-            self.log_error(f"Error in plot_18_18_3_affiliation_network: {str(e)}")
-            return None
-    
-    def _plot_affiliation_network_impl(self, top_n, suffix):
-        """Общая реализация сети аффилиаций"""
-        try:
-            if 'affiliations_list' not in self.df_processed.columns:
-                return None
-            
-            # Создаем граф
-            G = nx.Graph()
-            
-            for idx, row in self.df_processed.iterrows():
-                if isinstance(row['affiliations_list'], list) and len(row['affiliations_list']) >= 2:
-                    affs = [a.strip() for a in row['affiliations_list']]
-                    weight = row.get('count', 1)
-                    
-                    for aff in affs:
-                        if not G.has_node(aff):
-                            G.add_node(aff, weight=0, papers=0)
-                        G.nodes[aff]['weight'] += weight
-                        G.nodes[aff]['papers'] += 1
-                    
-                    for i in range(len(affs)):
-                        for j in range(i+1, len(affs)):
-                            if G.has_edge(affs[i], affs[j]):
-                                G[affs[i]][affs[j]]['weight'] += weight
-                                G[affs[i]][affs[j]]['papers'] += 1
-                            else:
-                                G.add_edge(affs[i], affs[j], weight=weight, papers=1)
-            
-            if len(G.nodes()) < 3:
-                self.log_warning("Insufficient data for affiliation network")
-                return None
-            
-            # Выбираем топ аффилиации
-            degree_dict = dict(G.degree(weight='weight'))
-            top_nodes = sorted(degree_dict.items(), key=lambda x: x[1], reverse=True)[:top_n]
-            top_node_names = [node[0] for node in top_nodes]
-            
-            H = G.subgraph(top_node_names)
-            
-            # Сохраняем данные
-            self.plot_data[f'18_18_{suffix}_affiliation_network'] = {
-                'nodes': [{'affiliation': node, 'weight': H.nodes[node]['weight'],
-                          'papers': H.nodes[node]['papers']} for node in H.nodes()],
-                'edges': [{'aff1': u, 'aff2': v, 'weight': H[u][v]['weight'],
-                          'papers': H[u][v]['papers']} for u, v in H.edges()]
-            }
-            
-            fig, ax = plt.subplots(figsize=(16, 12))
-            
-            pos = nx.spring_layout(H, k=3, seed=42)
-            
-            node_sizes = [H.nodes[n]['weight'] * 0.3 + 300 for n in H.nodes()]
-            node_colors = [H.nodes[n]['papers'] for n in H.nodes()]
-            
-            nodes = nx.draw_networkx_nodes(H, pos, node_size=node_sizes,
-                                          node_color=node_colors, cmap='Blues',
-                                          alpha=0.8, edgecolors='black', linewidths=1.5, ax=ax)
-            
-            if H.edges():
-                edge_weights = [H[u][v]['weight'] * 0.05 for u, v in H.edges()]
-                edges = nx.draw_networkx_edges(H, pos, width=edge_weights, alpha=0.4,
-                                              edge_color='gray', style='solid', ax=ax)
-            
-            # Подписи с переносом строк
-            labels = {}
-            for node in H.nodes():
-                words = node.split()
-                if len(node) > 30:
-                    mid = len(words) // 2
-                    labels[node] = '\n'.join([' '.join(words[:mid]), ' '.join(words[mid:])])
-                else:
-                    labels[node] = node
-            
-            nx.draw_networkx_labels(H, pos, labels=labels, font_size=8, font_weight='bold', ax=ax)
-            
-            ax.set_title(f'Top {top_n} Affiliation Collaboration Network (Version {suffix})', 
-                        fontweight='bold', fontsize=16)
-            ax.axis('off')
-            
-            # Цветовая шкала
-            sm = plt.cm.ScalarMappable(cmap='Blues',
-                                      norm=plt.Normalize(vmin=min(node_colors),
-                                                       vmax=max(node_colors)))
-            sm.set_array([])
-            cbar = plt.colorbar(sm, ax=ax, shrink=0.8, pad=0.02)
-            cbar.set_label('Number of Papers', fontweight='bold', fontsize=10)
-            
-            plt.tight_layout()
-            return fig
-            
-        except Exception as e:
-            self.log_error(f"Error in _plot_affiliation_network_impl: {str(e)}")
-            return None
-    
-    def plot_19_hierarchical_sankey(self):
-        """19. Иерархическая диаграмма Санки: Domain → Field → Subfield → Topic"""
-        try:
-            required_cols = ['Domain', 'Field', 'Subfield', 'Topic', 'max_citations']
-            available_cols = [col for col in required_cols if col in self.df_processed.columns]
-            
-            if len(available_cols) < 3:
-                return None
-            
-            valid_data = self.df_processed.dropna(subset=available_cols)
-            if len(valid_data) < 10:
-                return None
-            
-            # Создаем иерархические связи
-            links = []
-            nodes = []
-            node_indices = {}
-            
-            def add_node(name):
-                if name not in node_indices:
-                    node_indices[name] = len(nodes)
-                    nodes.append(name)
-                return node_indices[name]
-            
-            # Агрегируем веса (суммарные цитирования)
-            hierarchy_data = valid_data.groupby(['Domain', 'Field', 'Subfield', 'Topic']).agg({
-                'max_citations': 'sum',
-                'count': 'size'
-            }).reset_index()
-            
-            for _, row in hierarchy_data.iterrows():
-                domain = str(row['Domain']) if pd.notna(row['Domain']) else 'Unknown'
-                field = str(row['Field']) if pd.notna(row['Field']) else 'Unknown'
-                subfield = str(row['Subfield']) if pd.notna(row['Subfield']) else 'Unknown'
-                topic = str(row['Topic']) if pd.notna(row['Topic']) else 'Unknown'
-                weight = row['max_citations']
-                
-                if weight <= 0:
-                    continue
-                
-                # Добавляем связи
-                domain_idx = add_node(domain)
-                field_idx = add_node(field)
-                subfield_idx = add_node(subfield)
-                topic_idx = add_node(topic)
-                
-                links.append({'source': domain_idx, 'target': field_idx, 'value': weight})
-                links.append({'source': field_idx, 'target': subfield_idx, 'value': weight})
-                links.append({'source': subfield_idx, 'target': topic_idx, 'value': weight})
-            
-            # Сохраняем данные
-            self.plot_data['19_hierarchical_sankey'] = {
-                'nodes': nodes,
-                'links': links,
-                'total_weight': sum([l['value'] for l in links])
-            }
-            
-            # Создаем диаграмму Санки с plotly
-            fig = go.Figure(data=[go.Sankey(
-                node=dict(
-                    pad=15,
-                    thickness=20,
-                    line=dict(color="rgba(0,0,0,0)", width=0),  # Убираем обводку (полностью прозрачная)
-                    label=nodes,
-                    color="blue",
-                    # Настройки для текста внутри узлов
-                    hovertemplate='%{label}<br>Value: %{value}<extra></extra>'
-                ),
-                link=dict(
-                    source=[l['source'] for l in links],
-                    target=[l['target'] for l in links],
-                    value=[l['value'] for l in links]
-                )
-            )])
-            
-            fig.update_layout(
-                title_text="Hierarchical Knowledge Structure: Domain → Field → Subfield → Topic",
-                font_size=12,  # Увеличиваем размер шрифта для лучшей читаемости
-                width=1200,
-                height=800,
-                # Настройки для текста
-                font=dict(
-                    family="Arial, sans-serif",
-                    size=12,
-                    color="black"  # Черный цвет текста
-                )
-            )
-            
-            # Дополнительные настройки для текста узлов
-            fig.update_traces(
-                textfont=dict(
-                    family="Arial, sans-serif",
-                    size=11,
-                    color="black"  # Черный цвет текста в узлах
-                ),
-                selector=dict(type='sankey')
-            )
-            
-            return fig
-            
-        except Exception as e:
-            self.log_error(f"Error in plot_19_hierarchical_sankey: {str(e)}")
             return None
     
     def plot_20_multidimensional_scaling(self):
@@ -2192,41 +2528,39 @@ class ScientificDataAnalyzer:
             self.log_error(f"Error in plot_21_concept_network_weighted: {str(e)}")
             return None
     
-    def generate_all_plots(self, selected_plots=None):
-        """Генерация всех графиков с прогресс-баром"""
+    def generate_all_plots(self, selected_plots=None, show_regression=True, top_n_fields=10, top_n_countries=30, top_n_affiliations=30):
+        """Генерация всех графиков с прогресс-баром и настройками"""
         self.all_figures = {}
         self.plot_data = {}
         self.errors = []
         self.warnings = []
         
-        # Обновленный список всех функций графиков (23 графика)
+        # Обновленный список всех функций графиков
         plot_functions = [
-            ("1_distribution", "1. Distribution of Attention", self.plot_1_distribution_attention),
-            ("2_country_network", "2. Country Collaboration Network", self.plot_2_country_collaboration_network),
-            ("3_internationality", "3. Internationality vs Citations", self.plot_3_internationality_vs_citations),
+            ("1_distribution", "1. Distribution of Attention", lambda: self.plot_1_distribution_attention()),
+            ("2_country_chord", "2. Country Collaboration Chord Diagram", lambda: self.plot_country_chord_diagram(top_n_countries)),
+            ("3_internationality", "3. Internationality vs Citations", lambda: self.plot_3_internationality_vs_citations()),
             ("4_journal_heatmap", "4. Journal-Year Heatmap", lambda: self.plot_4_journal_year_heatmap(15)),
-            ("5_collab_linear", "5. Collaboration vs Citations (Linear)", self.plot_5_collaboration_vs_citations_linear),
-            ("6_collab_log", "6. Collaboration vs Citations (Log Y Scale)", self.plot_6_collaboration_vs_citations_log),
-            ("6_1_bubble_chart", "6.1 References vs Impact (Linear)", self.plot_6_1_bubble_chart),
-            ("6_2_bubble_chart", "6.2 References vs Impact (Log)", self.plot_6_2_bubble_chart),
+            ("5_collab_linear", "5. Collaboration vs Citations (Linear)", lambda: self.plot_5_collaboration_vs_citations_linear(show_regression)),
+            ("6_collab_log", "6. Collaboration vs Citations (Log Y Scale)", lambda: self.plot_6_collaboration_vs_citations_log(show_regression)),
+            ("6_1_bubble_chart", "6.1 References vs Impact (Linear)", lambda: self.plot_6_1_bubble_chart(show_regression)),
+            ("6_2_bubble_chart", "6.2 References vs Impact (Log)", lambda: self.plot_6_2_bubble_chart(show_regression)),
             ("7_concepts", "7. Concepts Analysis", lambda: self.plot_7_concepts_analysis(30)),
             ("8_concept_cooccurrence", "8. Concept Co-occurrence", lambda: self.plot_8_concept_cooccurrence(15)),
-            ("9_concept_influence", "9. Concept Influence Analysis", self.plot_9_concept_influence),
-            ("10_temporal_evolution", "10. Temporal Evolution", self.plot_10_temporal_evolution),
-            ("11_temporal_heatmap", "11. Temporal Heatmap", self.plot_11_temporal_heatmap),
-            ("11_team_size", "12. Team Size Analysis", self.plot_11_team_size_analysis),
-            ("12_correlation", "13. Correlation Matrix", self.plot_12_correlation_matrix),
-            ("13_cr_vs_oa", "14. CR vs OA Comparison", self.plot_13_cr_vs_oa_comparison),
-            ("14_domain_citations", "15. Citations by Domain", self.plot_14_citation_by_domain),
-            ("15_cumulative_influence", "16. Cumulative Influence", self.plot_15_cumulative_influence),
-            ("16_references_impact", "17. References vs Impact", self.plot_16_references_vs_impact),
-            ("17_journal_impact", "18. Journal Impact", self.plot_17_journal_impact),
-            ("18_18_1_affiliation_network", "19.1 Affiliation Network (Top 20)", self.plot_18_18_1_affiliation_network),
-            ("18_18_2_affiliation_network", "19.2 Affiliation Network (Top 30)", self.plot_18_18_2_affiliation_network),
-            ("18_18_3_affiliation_network", "19.3 Affiliation Network (Top 50)", self.plot_18_18_3_affiliation_network),
-            ("19_hierarchical_sankey", "20. Hierarchical Sankey Diagram", self.plot_19_hierarchical_sankey),
-            ("20_mds", "21. Multidimensional Scaling", self.plot_20_multidimensional_scaling),
-            ("21_concept_network_weighted", "22. Weighted Concept Network", self.plot_21_concept_network_weighted)
+            ("9_concept_influence", "9. Concept Influence Analysis", lambda: self.plot_9_concept_influence()),
+            ("10_temporal_evolution", "10. Temporal Evolution", lambda: self.plot_10_temporal_evolution()),
+            ("11_temporal_heatmap", "11. Temporal Heatmap", lambda: self.plot_11_temporal_heatmap()),
+            ("11_team_size", "12. Team Size Analysis", lambda: self.plot_11_team_size_analysis()),
+            ("12_correlation", "13. Correlation Matrix", lambda: self.plot_12_correlation_matrix()),
+            ("13_cr_vs_oa", "14. CR vs OA Comparison", lambda: self.plot_13_cr_vs_oa_comparison()),
+            ("14_domain_citations", "15. Citations by Domain", lambda: self.plot_14_citation_by_domain()),
+            ("15_cumulative_influence", "16. Cumulative Influence", lambda: self.plot_15_cumulative_influence()),
+            ("16_references_impact", "17. References vs Impact", lambda: self.plot_16_references_vs_impact(show_regression)),
+            ("17_journal_impact", "18. Journal Impact", lambda: self.plot_17_journal_impact()),
+            ("18_affiliation_chord", "19. Affiliation Collaboration Chord Diagram", lambda: self.plot_affiliation_chord_diagram(top_n_affiliations)),
+            ("19_hierarchical_sankey", "20. Hierarchical Sankey Diagram", lambda: self.plot_19_hierarchical_sankey(top_n_fields)),
+            ("20_mds", "21. Multidimensional Scaling", lambda: self.plot_20_multidimensional_scaling()),
+            ("21_concept_network_weighted", "22. Weighted Concept Network", lambda: self.plot_21_concept_network_weighted())
         ]
         
         # Если выбраны определенные графики
@@ -2430,15 +2764,25 @@ class ScientificDataAnalyzer:
         with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
             # 1. Сохраняем графики
             for i, (name, fig) in enumerate(self.all_figures.items()):
-                img_buffer = io.BytesIO()
-                fig.savefig(img_buffer, format='png', dpi=300,
-                          bbox_inches='tight', facecolor='white',
-                          edgecolor='black')
-                img_buffer.seek(0)
-                
-                filename = f"plot_{i+1:02d}_{name}.png"
-                zip_file.writestr(filename, img_buffer.read())
-                plt.close(fig)
+                # Проверяем тип фигуры (plotly или matplotlib)
+                if hasattr(fig, 'write_image'):
+                    # Plotly фигура
+                    import plotly.io as pio
+                    img_buffer = io.BytesIO()
+                    pio.write_image(fig, img_buffer, format='png', width=1200, height=800, scale=2)
+                    img_buffer.seek(0)
+                    filename = f"plot_{i+1:02d}_{name}.png"
+                    zip_file.writestr(filename, img_buffer.read())
+                else:
+                    # Matplotlib фигура
+                    img_buffer = io.BytesIO()
+                    fig.savefig(img_buffer, format='png', dpi=300,
+                              bbox_inches='tight', facecolor='white',
+                              edgecolor='black')
+                    img_buffer.seek(0)
+                    filename = f"plot_{i+1:02d}_{name}.png"
+                    zip_file.writestr(filename, img_buffer.read())
+                    plt.close(fig)
             
             # 2. Сохраняем Excel отчет
             if include_excel:
@@ -2478,7 +2822,7 @@ def main():
     # Определить all_plots здесь, в начале функции
     ALL_PLOTS = [
         ("1_distribution", "1. Distribution of Attention"),
-        ("2_country_network", "2. Country Collaboration Network"),
+        ("2_country_chord", "2. Country Collaboration Chord Diagram"),
         ("3_internationality", "3. Internationality vs Citations"),
         ("4_journal_heatmap", "4. Journal-Year Heatmap"),
         ("5_collab_linear", "5. Collaboration vs Citations (Linear)"),
@@ -2497,9 +2841,7 @@ def main():
         ("15_cumulative_influence", "16. Cumulative Influence"),
         ("16_references_impact", "17. References vs Impact"),
         ("17_journal_impact", "18. Journal Impact"),
-        ("18_18_1_affiliation_network", "19.1 Affiliation Network (Top 20)"),
-        ("18_18_2_affiliation_network", "19.2 Affiliation Network (Top 30)"),
-        ("18_18_3_affiliation_network", "19.3 Affiliation Network (Top 50)"),
+        ("18_affiliation_chord", "19. Affiliation Collaboration Chord Diagram"),
         ("19_hierarchical_sankey", "20. Hierarchical Sankey Diagram"),
         ("20_mds", "21. Multidimensional Scaling"),
         ("21_concept_network_weighted", "22. Weighted Concept Network")
@@ -2511,6 +2853,19 @@ def main():
     
     if 'plots_generated' not in st.session_state:
         st.session_state.plots_generated = False
+    
+    # Настройки для графиков
+    if 'show_regression' not in st.session_state:
+        st.session_state.show_regression = True
+    
+    if 'top_n_fields' not in st.session_state:
+        st.session_state.top_n_fields = 10
+    
+    if 'top_n_countries' not in st.session_state:
+        st.session_state.top_n_countries = 30
+    
+    if 'top_n_affiliations' not in st.session_state:
+        st.session_state.top_n_affiliations = 30
     
     # Боковая панель
     with st.sidebar:
@@ -2533,6 +2888,55 @@ def main():
         
         st.markdown("---")
         
+        # Настройки визуализации
+        st.subheader("🎛️ Настройки визуализации")
+        
+        # Чекбокс для регрессионных трендов
+        st.session_state.show_regression = st.checkbox(
+            "📈 Показывать регрессионные тренды",
+            value=st.session_state.show_regression,
+            help="Включить/выключить отображение красных линий регрессии на графиках"
+        )
+        
+        st.markdown("---")
+        
+        # Настройки для хордовых диаграмм
+        st.subheader("🌍 Настройки хордовых диаграмм")
+        
+        st.session_state.top_n_countries = st.slider(
+            "Количество стран в хордовой диаграмме",
+            min_value=10,
+            max_value=50,
+            value=st.session_state.top_n_countries,
+            step=5,
+            help="Выберите количество топ стран для отображения в круговой хордовой диаграмме"
+        )
+        
+        st.session_state.top_n_affiliations = st.slider(
+            "Количество аффилиаций в хордовой диаграмме",
+            min_value=10,
+            max_value=50,
+            value=st.session_state.top_n_affiliations,
+            step=5,
+            help="Выберите количество топ аффилиаций для отображения в круговой хордовой диаграмме"
+        )
+        
+        st.markdown("---")
+        
+        # Настройки для Sankey диаграммы
+        st.subheader("🏛️ Настройки Sankey диаграммы")
+        
+        st.session_state.top_n_fields = st.slider(
+            "Количество полей (Field) в Sankey диаграмме",
+            min_value=3,
+            max_value=20,
+            value=st.session_state.top_n_fields,
+            step=1,
+            help="Выберите количество топ полей для отображения в иерархической диаграмме Санки"
+        )
+        
+        st.markdown("---")
+        
         # Пример данных
         st.subheader("📚 Пример данных")
         sample_data = """doi	publication_date	Title	authors	ORCID ID 1; ORCID ID 2... ORCID ID last	author count	affiliations {aff 1; aff 2... aff last}	countries {country 1; ... country last}	Full journal Name	year	Volume	Pages (or article number)	Citation counts (CR)	Citation counts (OA)	Annual cit counts (CR)	Annual cit counts (OA)	references_count	count	Topic	Subfield	Field	Domain	Concepts
@@ -2548,8 +2952,9 @@ def main():
         **Инструкция:**
         1. Вставьте данные в формате TSV
         2. Нажмите "Загрузить данные"
-        3. Выберите графики для генерации
-        4. Скачайте результаты
+        3. Настройте параметры визуализации
+        4. Выберите графики для генерации
+        5. Скачайте результаты
         """)
     
     # Основное содержимое
@@ -2614,7 +3019,7 @@ def main():
         # Список графиков для выбора
         all_plots = [
             ("1_distribution", "1. Distribution of Attention"),
-            ("2_country_network", "2. Country Collaboration Network"),
+            ("2_country_chord", "2. Country Collaboration Chord Diagram"),
             ("3_internationality", "3. Internationality vs Citations"),
             ("4_journal_heatmap", "4. Journal-Year Heatmap"),
             ("5_collab_linear", "5. Collaboration vs Citations (Linear)"),
@@ -2633,9 +3038,7 @@ def main():
             ("15_cumulative_influence", "16. Cumulative Influence"),
             ("16_references_impact", "17. References vs Impact"),
             ("17_journal_impact", "18. Journal Impact"),
-            ("18_18_1_affiliation_network", "19.1 Affiliation Network (Top 20)"),
-            ("18_18_2_affiliation_network", "19.2 Affiliation Network (Top 30)"),
-            ("18_18_3_affiliation_network", "19.3 Affiliation Network (Top 50)"),
+            ("18_affiliation_chord", "19. Affiliation Collaboration Chord Diagram"),
             ("19_hierarchical_sankey", "20. Hierarchical Sankey Diagram"),
             ("20_mds", "21. Multidimensional Scaling"),
             ("21_concept_network_weighted", "22. Weighted Concept Network")
@@ -2665,13 +3068,12 @@ def main():
         # Группируем графики по категориям
         categories = {
             "📈 Основные распределения": ["1_distribution", "15_cumulative_influence"],
-            "🌍 Международное сотрудничество": ["2_country_network", "3_internationality", "5_collab_linear", "6_collab_log"],
+            "🌍 Международное сотрудничество": ["2_country_chord", "3_internationality", "5_collab_linear", "6_collab_log"],
             "📚 Журналы и публикации": ["4_journal_heatmap", "17_journal_impact"],
             "🔗 Ссылки и цитирования": ["6_1_bubble_chart", "6_2_bubble_chart", "13_cr_vs_oa", "16_references_impact"],
             "🏷️ Концепты и темы": ["7_concepts", "8_concept_cooccurrence", "9_concept_influence", "21_concept_network_weighted"],
             "⏰ Временной анализ": ["10_temporal_evolution", "11_temporal_heatmap"],
-            "👥 Команды и организации": ["11_team_size", "18_18_1_affiliation_network", 
-                                       "18_18_2_affiliation_network", "18_18_3_affiliation_network"],
+            "👥 Команды и организации": ["11_team_size", "18_affiliation_chord"],
             "📊 Анализ метрик": ["12_correlation", "14_domain_citations", "20_mds"],
             "🏛️ Иерархическая структура": ["19_hierarchical_sankey"]
         }
@@ -2699,7 +3101,13 @@ def main():
                     st.error("❌ Выберите хотя бы один график")
                 else:
                     with st.spinner("Генерация графиков..."):
-                        st.session_state.analyzer.generate_all_plots(st.session_state.selected_plots)
+                        st.session_state.analyzer.generate_all_plots(
+                            selected_plots=st.session_state.selected_plots,
+                            show_regression=st.session_state.show_regression,
+                            top_n_fields=st.session_state.top_n_fields,
+                            top_n_countries=st.session_state.top_n_countries,
+                            top_n_affiliations=st.session_state.top_n_affiliations
+                        )
                         st.session_state.plots_generated = True
                         st.success(f"✅ Сгенерировано {len(st.session_state.analyzer.all_figures)} графиков!")
         
@@ -2707,7 +3115,13 @@ def main():
             if st.button("🎯 Сгенерировать все графики", use_container_width=True):
                 st.session_state.selected_plots = [plot[0] for plot in all_plots]
                 with st.spinner("Генерация всех графиков..."):
-                    st.session_state.analyzer.generate_all_plots()
+                    st.session_state.analyzer.generate_all_plots(
+                        selected_plots=st.session_state.selected_plots,
+                        show_regression=st.session_state.show_regression,
+                        top_n_fields=st.session_state.top_n_fields,
+                        top_n_countries=st.session_state.top_n_countries,
+                        top_n_affiliations=st.session_state.top_n_affiliations
+                    )
                     st.session_state.plots_generated = True
                     st.success(f"✅ Сгенерировано {len(st.session_state.analyzer.all_figures)} графиков!")
         
@@ -2790,7 +3204,7 @@ def main():
                 plot_id = plot_options[selected_plot_name]
                 fig = st.session_state.analyzer.all_figures[plot_id]
                 
-                # Сохранить график в буфер (для matplotlib)
+                # Сохранить график в буфер
                 if hasattr(fig, 'update_layout'):
                     # plotly фигура
                     import plotly.io as pio
