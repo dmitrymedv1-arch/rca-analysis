@@ -383,7 +383,7 @@ class ScientificDataAnalyzer:
             return None
     
     def plot_2_country_chord_diagram(self):
-        """2. Хордовая диаграмма коллабораций между странами (с настраиваемым количеством стран)"""
+        """2. Круговая хордовая диаграмма коллабораций между странами"""
         try:
             if 'countries_list' not in self.df_processed.columns:
                 return None
@@ -397,11 +397,9 @@ class ScientificDataAnalyzer:
                     countries = [c.strip().upper() for c in row['countries_list']]
                     weight = row.get('count', 1)
                     
-                    # Считаем вес для каждой страны
                     for country in countries:
                         country_weights[country] += weight
                     
-                    # Считаем пары
                     for i in range(len(countries)):
                         for j in range(i+1, len(countries)):
                             pair = tuple(sorted([countries[i], countries[j]]))
@@ -415,7 +413,7 @@ class ScientificDataAnalyzer:
                 self.log_warning("Insufficient data for country chord diagram")
                 return None
             
-            # Выбираем топ N стран по весу
+            # Выбираем топ N стран
             top_countries = sorted(country_weights.items(), key=lambda x: x[1], reverse=True)[:self.top_countries_chord]
             top_country_names = [c[0] for c in top_countries]
             
@@ -424,7 +422,6 @@ class ScientificDataAnalyzer:
             country_to_idx = {name: i for i, name in enumerate(top_country_names)}
             adjacency_matrix = np.zeros((n, n))
             
-            # Заполняем матрицу
             for pair_data in country_pairs:
                 if pair_data['country1'] in country_to_idx and pair_data['country2'] in country_to_idx:
                     i = country_to_idx[pair_data['country1']]
@@ -432,7 +429,7 @@ class ScientificDataAnalyzer:
                     adjacency_matrix[i, j] += pair_data['weight']
                     adjacency_matrix[j, i] += pair_data['weight']
             
-            # Создаем цветовую схему для стран
+            # Создаем цветовую схему
             colors = []
             for i in range(n):
                 hue = i / n
@@ -440,68 +437,138 @@ class ScientificDataAnalyzer:
                 color_hex = '#{:02x}{:02x}{:02x}'.format(int(rgb[0]*255), int(rgb[1]*255), int(rgb[2]*255))
                 colors.append(color_hex)
             
-            # Подготовка данных для хордовой диаграммы
-            sources = []
-            targets = []
-            values = []
-            link_colors = []
+            # Расставляем узлы по кругу
+            angles = np.linspace(0, 2 * np.pi, n, endpoint=False)
+            radius = 1.0
+            x_positions = radius * np.cos(angles)
+            y_positions = radius * np.sin(angles)
+            
+            # Создаем фигуру
+            fig = go.Figure()
+            
+            # Добавляем узлы (точки на круге)
+            fig.add_trace(go.Scatter(
+                x=x_positions,
+                y=y_positions,
+                mode='markers+text',
+                marker=dict(
+                    size=30,
+                    color=colors,
+                    line=dict(color='black', width=1.5),
+                    symbol='circle'
+                ),
+                text=[name[:20] + '...' if len(name) > 20 else name for name in top_country_names],
+                textposition='middle center',
+                textfont=dict(size=10, color='black', family='Arial, sans-serif'),
+                hovertext=[f"<b>{name}</b><br>Total weight: {weight:.1f}" for name, weight in top_countries],
+                hoverinfo='text',
+                name='Countries'
+            ))
+            
+            # Добавляем хорды (связи)
+            max_weight = max(adjacency_matrix.flatten()) if adjacency_matrix.size > 0 else 1
             
             for i in range(n):
                 for j in range(i+1, n):
-                    if adjacency_matrix[i, j] > 0:
-                        sources.append(i)
-                        targets.append(j)
-                        values.append(adjacency_matrix[i, j])
+                    weight = adjacency_matrix[i, j]
+                    if weight > 0:
+                        # Создаем плавную кривую между точками i и j
+                        t = np.linspace(0, 1, 100)
                         
-                        # Создаем градиентный цвет для хорды
-                        start_color = colors[i]
-                        end_color = colors[j]
+                        # Безье кривая между двумя точками на окружности
+                        p0 = np.array([x_positions[i], y_positions[i]])
+                        p3 = np.array([x_positions[j], y_positions[j]])
                         
-                        # Смешиваем цвета для хорды
-                        start_rgb = [int(start_color[1:3], 16), int(start_color[3:5], 16), int(start_color[5:7], 16)]
-                        end_rgb = [int(end_color[1:3], 16), int(end_color[3:5], 16), int(end_color[5:7], 16)]
-                        mixed_rgb = [(start_rgb[k] + end_rgb[k]) // 2 for k in range(3)]
-                        mixed_color = f'rgba({mixed_rgb[0]}, {mixed_rgb[1]}, {mixed_rgb[2]}, 0.7)'
-                        link_colors.append(mixed_color)
+                        # Контрольные точки для изгиба наружу
+                        mid_angle = (angles[i] + angles[j]) / 2
+                        if abs(angles[i] - angles[j]) > np.pi:
+                            mid_angle += np.pi
+                        control_offset = 0.4 * (1 + weight / max_weight)
+                        ctrl_point = np.array([control_offset * np.cos(mid_angle), control_offset * np.sin(mid_angle)])
+                        
+                        # Кривая Безье 3-го порядка
+                        curve_x = (1-t)**3 * p0[0] + 3*(1-t)**2*t * ctrl_point[0] + 3*(1-t)*t**2 * ctrl_point[0] + t**3 * p3[0]
+                        curve_y = (1-t)**3 * p0[1] + 3*(1-t)**2*t * ctrl_point[1] + 3*(1-t)*t**2 * ctrl_point[1] + t**3 * p3[1]
+                        
+                        # Градиентный цвет хорды
+                        start_rgb = [int(colors[i][1:3], 16), int(colors[i][3:5], 16), int(colors[i][5:7], 16)]
+                        end_rgb = [int(colors[j][1:3], 16), int(colors[j][3:5], 16), int(colors[j][5:7], 16)]
+                        
+                        # Создаем градиент по длине кривой
+                        for k in range(len(curve_x) - 1):
+                            t_pos = k / len(curve_x)
+                            blended_rgb = [
+                                start_rgb[0] * (1 - t_pos) + end_rgb[0] * t_pos,
+                                start_rgb[1] * (1 - t_pos) + end_rgb[1] * t_pos,
+                                start_rgb[2] * (1 - t_pos) + end_rgb[2] * t_pos
+                            ]
+                            color = f'rgba({int(blended_rgb[0])}, {int(blended_rgb[1])}, {int(blended_rgb[2])}, 0.8)'
+                            
+                            fig.add_trace(go.Scatter(
+                                x=[curve_x[k], curve_x[k+1]],
+                                y=[curve_y[k], curve_y[k+1]],
+                                mode='lines',
+                                line=dict(width=3 + 12 * weight / max_weight, color=color),
+                                hoverinfo='none',
+                                showlegend=False
+                            ))
             
-            # Создаем хордовую диаграмму с помощью Sankey в круговом расположении
-            fig = go.Figure(data=[go.Sankey(
-                arrangement="snap",
-                node=dict(
-                    pad=15,
-                    thickness=20,
-                    line=dict(color="black", width=0.5),
-                    label=top_country_names,
-                    color=colors,
-                    hovertemplate='%{label}<br>Total Weight: %{value}<extra></extra>'
-                ),
-                link=dict(
-                    source=sources,
-                    target=targets,
-                    value=values,
-                    color=link_colors,
-                    hovertemplate='%{source.label} → %{target.label}<br>Collaboration Weight: %{value}<extra></extra>'
-                )
-            )])
+            # Добавляем внутренний круг
+            theta = np.linspace(0, 2*np.pi, 100)
+            inner_radius = 0.85
+            fig.add_trace(go.Scatter(
+                x=inner_radius * np.cos(theta),
+                y=inner_radius * np.sin(theta),
+                mode='lines',
+                line=dict(color='white', width=2),
+                fill='toself',
+                fillcolor='rgba(240, 240, 240, 0.3)',
+                hoverinfo='none',
+                showlegend=False
+            ))
             
-            # Настройка кругового расположения узлов
+            # Добавляем внешнюю окружность
+            fig.add_trace(go.Scatter(
+                x=radius * np.cos(theta),
+                y=radius * np.sin(theta),
+                mode='lines',
+                line=dict(color='gray', width=1, dash='dot'),
+                hoverinfo='none',
+                showlegend=False
+            ))
+            
             fig.update_layout(
-                title_text=f"Country Collaboration Chord Diagram (Top {self.top_countries_chord} Countries)",
-                font_size=12,
-                width=1000,
-                height=800,
-                font=dict(
-                    family="Arial, sans-serif",
-                    size=12,
-                    color="black"
-                )
+                title=dict(
+                    text=f"Country Collaboration Chord Diagram (Top {self.top_countries_chord} Countries)",
+                    font=dict(size=16, weight='bold')
+                ),
+                width=900,
+                height=900,
+                xaxis=dict(
+                    visible=False,
+                    range=[-1.5, 1.5],
+                    scaleanchor="y",
+                    scaleratio=1
+                ),
+                yaxis=dict(
+                    visible=False,
+                    range=[-1.5, 1.5]
+                ),
+                plot_bgcolor='white',
+                paper_bgcolor='white',
+                showlegend=False,
+                hovermode='closest'
             )
             
             # Сохраняем данные
             self.plot_data['2_country_chord'] = {
                 'countries': top_country_names,
                 'adjacency_matrix': adjacency_matrix.tolist(),
-                'total_collaborations': sum(values)
+                'total_collaborations': sum(adjacency_matrix.flatten()) / 2,
+                'coordinates': {
+                    'x': x_positions.tolist(),
+                    'y': y_positions.tolist()
+                }
             }
             
             return fig
