@@ -338,65 +338,76 @@ class ScientificDataAnalyzer:
                 'total_collaborations': int(collaboration_matrix.sum() / 2)
             }
             
-            # Создаем диаграмму хорд с plotly
-            fig = go.Figure()
+            # Создаем диаграмму с помощью go.Sankey
+            # Преобразуем матрицу в формат для Sankey диаграммы
+            sources = []
+            targets = []
+            values = []
+            
+            for i in range(len(active_countries)):
+                for j in range(i+1, len(active_countries)):
+                    value = collaboration_matrix[i, j]
+                    if value > 0:
+                        sources.append(i)
+                        targets.append(j)
+                        values.append(value)
             
             # Создаем цветовую палитру
             colors = plt.cm.Set3(np.linspace(0, 1, len(active_countries)))
             
-            # Безопасная функция конвертации HEX в RGB
-            def hex_to_rgb(color):
-                """Конвертирует HEX цвет в RGB кортеж (0-255)"""
-                if isinstance(color, str) and color.startswith('#') and len(color) == 7:
+            # Безопасная функция конвертации цвета
+            def get_color_rgba(color, alpha=0.7):
+                """Конвертирует цвет в формат rgba для plotly"""
+                if isinstance(color, (tuple, list)) and len(color) >= 3:
+                    if len(color) == 4:
+                        r, g, b, a = color
+                        return f'rgba({int(r*255)}, {int(g*255)}, {int(b*255)}, {alpha})'
+                    else:
+                        r, g, b = color[:3]
+                        return f'rgba({int(r*255)}, {int(g*255)}, {int(b*255)}, {alpha})'
+                elif isinstance(color, str) and color.startswith('#'):
                     try:
-                        return (int(color[1:3], 16), int(color[3:5], 16), int(color[5:7], 16))
-                    except ValueError:
-                        return (46, 134, 171)  # Цвет по умолчанию (#2E86AB)
-                elif isinstance(color, (tuple, list)) and len(color) == 3:
-                    # Если уже RGB кортеж, возвращаем как есть
-                    return tuple(color)
+                        r = int(color[1:3], 16)
+                        g = int(color[3:5], 16)
+                        b = int(color[5:7], 16)
+                        return f'rgba({r}, {g}, {b}, {alpha})'
+                    except (ValueError, IndexError):
+                        return f'rgba(46, 134, 171, {alpha})'
                 else:
-                    return (46, 134, 171)  # Цвет по умолчанию
+                    return f'rgba(46, 134, 171, {alpha})'
             
-            # Преобразуем цвета в RGB для plotly
-            rgb_colors = []
+            # Создаем цвета для узлов
+            node_colors = []
             for i in range(len(active_countries)):
                 if i < len(colors):
-                    # Конвертируем matplotlib цвет в HEX, если нужно
-                    if isinstance(colors[i], (tuple, list)) and len(colors[i]) == 4:
-                        # RGBA кортеж
-                        r, g, b, a = colors[i]
-                        rgb_colors.append(f'rgba({int(r*255)}, {int(g*255)}, {int(b*255)}, 0.7)')
-                    elif isinstance(colors[i], (tuple, list)) and len(colors[i]) == 3:
-                        # RGB кортеж
-                        r, g, b = colors[i]
-                        rgb_colors.append(f'rgba({int(r*255)}, {int(g*255)}, {int(b*255)}, 0.7)')
-                    elif isinstance(colors[i], str) and colors[i].startswith('#'):
-                        # HEX строка
-                        r, g, b = hex_to_rgb(colors[i])
-                        rgb_colors.append(f'rgba({r}, {g}, {b}, 0.7)')
-                    else:
-                        # Цвет по умолчанию
-                        rgb_colors.append('rgba(46, 134, 171, 0.7)')
+                    node_colors.append(get_color_rgba(colors[i]))
                 else:
-                    rgb_colors.append('rgba(46, 134, 171, 0.7)')
+                    node_colors.append('rgba(46, 134, 171, 0.7)')
             
-            # Добавляем диаграмму хорд
-            fig.add_trace(go.Chord(
-                matrix=collaboration_matrix,
-                labels=active_countries,
-                colorscale='Viridis',
-                line=dict(color='black', width=0.5),
-                hoverinfo='all',
-                hovertemplate='%{source.label} → %{target.label}<br>Collaborations: %{value}<extra></extra>'
-            ))
+            # Создаем диаграмму Sankey (которая визуально похожа на chord diagram)
+            fig = go.Figure(data=[go.Sankey(
+                node=dict(
+                    pad=15,
+                    thickness=20,
+                    line=dict(color="black", width=0.5),
+                    label=active_countries,
+                    color=node_colors,
+                    hovertemplate='%{label}<br>Total collaborations: %{value}<extra></extra>'
+                ),
+                link=dict(
+                    source=sources,
+                    target=targets,
+                    value=values,
+                    color='rgba(128, 128, 128, 0.4)',
+                    hovertemplate='%{source.label} ↔ %{target.label}<br>Collaborations: %{value}<extra></extra>'
+                )
+            )])
             
             fig.update_layout(
-                title=f'Country Collaboration Chord Diagram (Top {len(active_countries)} Countries)',
+                title=f'Country Collaboration Network (Top {len(active_countries)} Countries)',
                 font_size=12,
                 width=1000,
-                height=1000,
-                showlegend=False,
+                height=800,
                 margin=dict(t=100, l=50, r=50, b=50)
             )
             
@@ -461,14 +472,23 @@ class ScientificDataAnalyzer:
                 'total_collaborations': int(collaboration_matrix.sum() / 2)
             }
             
-            # Создаем диаграмму хорд с plotly
-            fig = go.Figure()
+            # Преобразуем матрицу в формат для Sankey диаграммы
+            sources = []
+            targets = []
+            values = []
+            
+            for i in range(len(active_affiliations)):
+                for j in range(i+1, len(active_affiliations)):
+                    value = collaboration_matrix[i, j]
+                    if value > 0:
+                        sources.append(i)
+                        targets.append(j)
+                        values.append(value)
             
             # Сокращаем названия для читаемости
             short_labels = []
             for aff in active_affiliations:
                 if len(aff) > 30:
-                    # Берем последнюю часть названия (обычно университет или организация)
                     parts = aff.split()
                     if len(parts) > 2:
                         short = ' '.join(parts[-2:])
@@ -478,22 +498,62 @@ class ScientificDataAnalyzer:
                 else:
                     short_labels.append(aff)
             
-            # Создаем диаграмму хорд
-            fig.add_trace(go.Chord(
-                matrix=collaboration_matrix,
-                labels=short_labels,
-                colorscale='Viridis',
-                line=dict(color='black', width=0.5),
-                hoverinfo='all',
-                hovertemplate='%{source.label} → %{target.label}<br>Collaborations: %{value}<extra></extra>'
-            ))
+            # Создаем цветовую палитру
+            colors = plt.cm.Set3(np.linspace(0, 1, len(active_affiliations)))
+            
+            # Безопасная функция конвертации цвета
+            def get_color_rgba(color, alpha=0.7):
+                """Конвертирует цвет в формат rgba для plotly"""
+                if isinstance(color, (tuple, list)) and len(color) >= 3:
+                    if len(color) == 4:
+                        r, g, b, a = color
+                        return f'rgba({int(r*255)}, {int(g*255)}, {int(b*255)}, {alpha})'
+                    else:
+                        r, g, b = color[:3]
+                        return f'rgba({int(r*255)}, {int(g*255)}, {int(b*255)}, {alpha})'
+                elif isinstance(color, str) and color.startswith('#'):
+                    try:
+                        r = int(color[1:3], 16)
+                        g = int(color[3:5], 16)
+                        b = int(color[5:7], 16)
+                        return f'rgba({r}, {g}, {b}, {alpha})'
+                    except (ValueError, IndexError):
+                        return f'rgba(46, 134, 171, {alpha})'
+                else:
+                    return f'rgba(46, 134, 171, {alpha})'
+            
+            # Создаем цвета для узлов
+            node_colors = []
+            for i in range(len(active_affiliations)):
+                if i < len(colors):
+                    node_colors.append(get_color_rgba(colors[i]))
+                else:
+                    node_colors.append('rgba(46, 134, 171, 0.7)')
+            
+            # Создаем диаграмму Sankey
+            fig = go.Figure(data=[go.Sankey(
+                node=dict(
+                    pad=15,
+                    thickness=20,
+                    line=dict(color="black", width=0.5),
+                    label=short_labels,
+                    color=node_colors,
+                    hovertemplate='%{label}<br>Total collaborations: %{value}<extra></extra>'
+                ),
+                link=dict(
+                    source=sources,
+                    target=targets,
+                    value=values,
+                    color='rgba(128, 128, 128, 0.4)',
+                    hovertemplate='%{source.label} ↔ %{target.label}<br>Collaborations: %{value}<extra></extra>'
+                )
+            )])
             
             fig.update_layout(
-                title=f'Affiliation Collaboration Chord Diagram (Top {len(active_affiliations)} Affiliations)',
+                title=f'Affiliation Collaboration Network (Top {len(active_affiliations)} Affiliations)',
                 font_size=10,
                 width=1200,
-                height=1000,
-                showlegend=False,
+                height=800,
                 margin=dict(t=100, l=50, r=50, b=50)
             )
             
