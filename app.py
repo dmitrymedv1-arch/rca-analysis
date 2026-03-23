@@ -3102,11 +3102,7 @@ def main():
                 else:
                     with st.spinner("Генерация графиков..."):
                         st.session_state.analyzer.generate_all_plots(
-                            selected_plots=st.session_state.selected_plots,
-                            show_regression=st.session_state.show_regression,
-                            top_n_fields=st.session_state.top_n_fields,
-                            top_n_countries=st.session_state.top_n_countries,
-                            top_n_affiliations=st.session_state.top_n_affiliations
+                            selected_plots=st.session_state.selected_plots
                         )
                         st.session_state.plots_generated = True
                         st.success(f"✅ Сгенерировано {len(st.session_state.analyzer.all_figures)} графиков!")
@@ -3116,11 +3112,7 @@ def main():
                 st.session_state.selected_plots = [plot[0] for plot in all_plots]
                 with st.spinner("Генерация всех графиков..."):
                     st.session_state.analyzer.generate_all_plots(
-                        selected_plots=st.session_state.selected_plots,
-                        show_regression=st.session_state.show_regression,
-                        top_n_fields=st.session_state.top_n_fields,
-                        top_n_countries=st.session_state.top_n_countries,
-                        top_n_affiliations=st.session_state.top_n_affiliations
+                        selected_plots=st.session_state.selected_plots
                     )
                     st.session_state.plots_generated = True
                     st.success(f"✅ Сгенерировано {len(st.session_state.analyzer.all_figures)} графиков!")
