@@ -2694,7 +2694,7 @@ def main():
         
         show_regression = st.checkbox(
             "📈 Показывать регрессионные тренды",
-            value=st.session_state.analyzer.show_regression_trends,
+            value=st.session_state.analyzer.show_regression_trends if hasattr(st.session_state.analyzer, 'show_regression_trends') else True,
             help="Отображать линии регрессии на графиках (где применимо)"
         )
         
