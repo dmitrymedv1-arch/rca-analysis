@@ -288,8 +288,13 @@ class ScientificDataAnalyzer:
     # ============================================================================
     
     def plot_country_chord_diagram(self, top_n=20):
-        """Диаграмма хорд для международного сотрудничества"""
+        """Круговая хордовая диаграмма для международного сотрудничества"""
         try:
+            import holoviews as hv
+            from holoviews import opts
+            import colorcet as cc
+            hv.extension('bokeh')
+            
             if 'countries_list' not in self.df_processed.columns:
                 return None
             
@@ -338,81 +343,69 @@ class ScientificDataAnalyzer:
                 'total_collaborations': int(collaboration_matrix.sum() / 2)
             }
             
-            # Создаем диаграмму с помощью go.Sankey
-            # Преобразуем матрицу в формат для Sankey диаграммы
-            sources = []
-            targets = []
-            values = []
-            
+            # Создаем DataFrame для связей
+            links = []
             for i in range(len(active_countries)):
                 for j in range(i+1, len(active_countries)):
                     value = collaboration_matrix[i, j]
                     if value > 0:
-                        sources.append(i)
-                        targets.append(j)
-                        values.append(value)
+                        links.append({
+                            'source': active_countries[i],
+                            'target': active_countries[j],
+                            'value': value
+                        })
             
-            # Создаем цветовую палитру
-            colors = plt.cm.Set3(np.linspace(0, 1, len(active_countries)))
+            links_df = pd.DataFrame(links)
             
-            # Безопасная функция конвертации цвета
-            def get_color_rgba(color, alpha=0.7):
-                """Конвертирует цвет в формат rgba для plotly"""
-                if isinstance(color, (tuple, list)) and len(color) >= 3:
-                    if len(color) == 4:
-                        r, g, b, a = color
-                        return f'rgba({int(r*255)}, {int(g*255)}, {int(b*255)}, {alpha})'
-                    else:
-                        r, g, b = color[:3]
-                        return f'rgba({int(r*255)}, {int(g*255)}, {int(b*255)}, {alpha})'
-                elif isinstance(color, str) and color.startswith('#'):
-                    try:
-                        r = int(color[1:3], 16)
-                        g = int(color[3:5], 16)
-                        b = int(color[5:7], 16)
-                        return f'rgba({r}, {g}, {b}, {alpha})'
-                    except (ValueError, IndexError):
-                        return f'rgba(46, 134, 171, {alpha})'
-                else:
-                    return f'rgba(46, 134, 171, {alpha})'
+            # Создаем круговую хордовую диаграмму с градиентной заливкой
+            chord = hv.Chord(links_df)
             
-            # Создаем цвета для узлов
-            node_colors = []
-            for i in range(len(active_countries)):
-                if i < len(colors):
-                    node_colors.append(get_color_rgba(colors[i]))
-                else:
-                    node_colors.append('rgba(46, 134, 171, 0.7)')
-            
-            # Создаем диаграмму Sankey (которая визуально похожа на chord diagram)
-            fig = go.Figure(data=[go.Sankey(
-                node=dict(
-                    pad=15,
-                    thickness=20,
-                    line=dict(color="black", width=0.5),
-                    label=active_countries,
-                    color=node_colors,
-                    hovertemplate='%{label}<br>Total collaborations: %{value}<extra></extra>'
-                ),
-                link=dict(
-                    source=sources,
-                    target=targets,
-                    value=values,
-                    color='rgba(128, 128, 128, 0.4)',
-                    hovertemplate='%{source.label} ↔ %{target.label}<br>Collaborations: %{value}<extra></extra>'
+            # Применяем градиентную цветовую схему от центра к краям
+            chord.opts(
+                opts.Chord(
+                    cmap='viridis',
+                    edge_cmap='plasma',
+                    edge_color='value',
+                    node_color='index',
+                    labels='index',
+                    label_text_font_size='8pt',
+                    title=f'Country Collaboration Chord Diagram (Top {len(active_countries)} Countries)',
+                    width=900,
+                    height=900,
+                    bgcolor='white',
+                    xaxis=None,
+                    yaxis=None,
+                    toolbar='above',
+                    edge_line_width=1.5,
+                    edge_alpha=0.7,
+                    node_size=12,
+                    hook=lambda plot, element: plot.state.toolbar.logo = None
                 )
-            )])
-            
-            fig.update_layout(
-                title=f'Country Collaboration Network (Top {len(active_countries)} Countries)',
-                font_size=12,
-                width=1000,
-                height=800,
-                margin=dict(t=100, l=50, r=50, b=50)
             )
             
-            return fig
+            # Конвертируем в plotly для отображения в streamlit
+            from bokeh.plotting import figure
+            from bokeh.embed import file_html
+            from bokeh.resources import CDN
+            import plotly.graph_objects as go
+            from plotly.subplots import make_subplots
+            import plotly.io as pio
             
+            # Создаем HTML представление для holoviews
+            hv_obj = chord.opts(opts.Chord(cmap='viridis', edge_cmap='plasma', edge_color='value'))
+            bokeh_plot = hv.render(hv_obj, backend='bokeh')
+            
+            # Конвертируем в plotly figure
+            html = file_html(bokeh_plot, CDN, "chord_diagram")
+            
+            # Используем компонент html в streamlit
+            from streamlit.components.v1 import html
+            
+            return html(html, height=950)
+            
+        except ImportError as e:
+            self.log_error(f"Error importing required libraries: {str(e)}. Please install: holoviews, bokeh, colorcet")
+            return None
         except Exception as e:
             self.log_error(f"Error in plot_country_chord_diagram: {str(e)}", traceback.format_exc())
             return None
