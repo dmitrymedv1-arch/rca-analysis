@@ -288,12 +288,10 @@ class ScientificDataAnalyzer:
     # ============================================================================
     
     def plot_country_chord_diagram(self, top_n=20):
-        """Круговая хордовая диаграмма для международного сотрудничества"""
+        """Круговая хордовая диаграмма для международного сотрудничества с градиентной заливкой"""
         try:
-            import holoviews as hv
-            from holoviews import opts
-            import colorcet as cc
-            hv.extension('bokeh')
+            import plotly.graph_objects as go
+            import plotly.express as px
             
             if 'countries_list' not in self.df_processed.columns:
                 return None
@@ -343,69 +341,66 @@ class ScientificDataAnalyzer:
                 'total_collaborations': int(collaboration_matrix.sum() / 2)
             }
             
-            # Создаем DataFrame для связей
-            links = []
+            # Создаем связи для chord диаграммы
+            sources = []
+            targets = []
+            values = []
+            colors = []
+            
+            # Генерируем градиентные цвета для каждой связи
+            max_value = collaboration_matrix.max()
+            
             for i in range(len(active_countries)):
-                for j in range(i+1, len(active_countries)):
+                for j in range(len(active_countries)):
                     value = collaboration_matrix[i, j]
-                    if value > 0:
-                        links.append({
-                            'source': active_countries[i],
-                            'target': active_countries[j],
-                            'value': value
-                        })
+                    if value > 0 and i != j:
+                        sources.append(active_countries[i])
+                        targets.append(active_countries[j])
+                        values.append(value)
+                        # Градиент цвета от зеленого (мало) к красному (много)
+                        color_intensity = value / max_value
+                        colors.append(f'rgba({int(255 * color_intensity)}, {int(255 * (1 - color_intensity))}, 100, 0.7)')
             
-            links_df = pd.DataFrame(links)
+            # Создаем DataFrame для chord диаграммы
+            chord_df = pd.DataFrame({
+                'source': sources,
+                'target': targets,
+                'value': values,
+                'color': colors
+            })
             
-            # Создаем круговую хордовую диаграмму с градиентной заливкой
-            chord = hv.Chord(links_df)
-            
-            # Применяем градиентную цветовую схему от центра к краям
-            chord.opts(
-                opts.Chord(
-                    cmap='viridis',
-                    edge_cmap='plasma',
-                    edge_color='value',
-                    node_color='index',
-                    labels='index',
-                    label_text_font_size='8pt',
-                    title=f'Country Collaboration Chord Diagram (Top {len(active_countries)} Countries)',
-                    width=900,
-                    height=900,
-                    bgcolor='white',
-                    xaxis=None,
-                    yaxis=None,
-                    toolbar='above',
-                    edge_line_width=1.5,
-                    edge_alpha=0.7,
-                    node_size=12,
-                    hook=lambda plot, element: plot.state.toolbar.logo = None
+            # Используем plotly.graph_objects для создания chord диаграммы
+            fig = go.Figure(data=[go.Sankey(
+                node=dict(
+                    pad=15,
+                    thickness=20,
+                    line=dict(color="black", width=0.5),
+                    label=active_countries,
+                    color="rgba(46, 134, 171, 0.8)",
+                    hovertemplate='%{label}<br>Total connections: %{value}<extra></extra>'
+                ),
+                link=dict(
+                    source=[active_countries.index(s) for s in sources],
+                    target=[active_countries.index(t) for t in targets],
+                    value=values,
+                    color=colors,
+                    hovertemplate='%{source.label} → %{target.label}<br>Collaborations: %{value}<extra></extra>'
                 )
+            )])
+            
+            # Настраиваем круговое расположение узлов
+            fig.update_layout(
+                title=f'Country Collaboration Chord Diagram (Top {len(active_countries)} Countries)',
+                font_size=12,
+                width=1000,
+                height=1000,
+                margin=dict(t=100, l=50, r=50, b=50),
+                paper_bgcolor='white',
+                plot_bgcolor='white'
             )
             
-            # Конвертируем в plotly для отображения в streamlit
-            from bokeh.plotting import figure
-            from bokeh.embed import file_html
-            from bokeh.resources import CDN
-            import plotly.graph_objects as go
-            from plotly.subplots import make_subplots
-            import plotly.io as pio
+            return fig
             
-            # Создаем HTML представление для holoviews
-            hv_obj = chord.opts(opts.Chord(cmap='viridis', edge_cmap='plasma', edge_color='value'))
-            bokeh_plot = hv.render(hv_obj, backend='bokeh')
-            
-            # Конвертируем в plotly figure
-            html = file_html(bokeh_plot, CDN, "chord_diagram")
-            
-            # Используем компонент html в streamlit
-            from streamlit.components.v1 import html
-            
-            return html(html, height=950)
-            
-        except ImportError as e:
-            self.log_error(f"Error importing required libraries: {str(e)}. Please install: holoviews, bokeh, colorcet")
-            return None
         except Exception as e:
             self.log_error(f"Error in plot_country_chord_diagram: {str(e)}", traceback.format_exc())
             return None
