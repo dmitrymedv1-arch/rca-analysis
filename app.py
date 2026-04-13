@@ -31,7 +31,6 @@ from streamlit_option_menu import option_menu
 import tempfile
 import time
 import colorsys  # Для плавных градиентов в хордовых диаграммах
-import re  # Для парсинга годовых фильтров
 
 # Настройка страницы Streamlit
 st.set_page_config(
@@ -106,12 +105,7 @@ class ScientificDataAnalyzer:
         self.show_regression_trends = True
         self.top_countries_chord = 20
         self.top_affiliations_chord = 20
-        self.top_fields_sankey = 10  # Сохранено для обратной совместимости, но используется как top_domains
-        self.top_domains_sankey = 10  # Новый параметр для количества доменов
-        self.max_fields_per_domain = 8  # Ограничение на количество Field внутри Domain
-        self.max_subfields_per_field = 20  # Ограничение на количество Subfield (до 20 наиболее релевантных)
-        self.sankey_year_filter = None  # Фильтр по годам для Sankey диаграммы
-        self.sankey_weight_metric = 'max_annual_citations'  # Метрика веса (нормализованная)
+        self.top_fields_sankey = 10
         
     def log_error(self, error_msg, details=""):
         """Логирование ошибки"""
@@ -137,10 +131,7 @@ class ScientificDataAnalyzer:
         self.progress = value
     
     def update_visualization_settings(self, show_regression_trends=None, top_countries_chord=None,
-                                       top_affiliations_chord=None, top_fields_sankey=None,
-                                       top_domains_sankey=None, max_fields_per_domain=None,
-                                       max_subfields_per_field=None, sankey_year_filter=None,
-                                       sankey_weight_metric=None):
+                                       top_affiliations_chord=None, top_fields_sankey=None):
         """Обновление настроек визуализации"""
         if show_regression_trends is not None:
             self.show_regression_trends = show_regression_trends
@@ -150,69 +141,6 @@ class ScientificDataAnalyzer:
             self.top_affiliations_chord = top_affiliations_chord
         if top_fields_sankey is not None:
             self.top_fields_sankey = top_fields_sankey
-        if top_domains_sankey is not None:
-            self.top_domains_sankey = top_domains_sankey
-        if max_fields_per_domain is not None:
-            self.max_fields_per_domain = max_fields_per_domain
-        if max_subfields_per_field is not None:
-            self.max_subfields_per_field = max_subfields_per_field
-        if sankey_year_filter is not None:
-            self.sankey_year_filter = sankey_year_filter
-        if sankey_weight_metric is not None:
-            self.sankey_weight_metric = sankey_weight_metric
-    
-    def parse_year_filter(self, filter_string):
-        """
-        Парсит строку фильтра по годам.
-        Поддерживает форматы:
-        - "2022" - один год
-        - "2021,2023" - несколько лет
-        - "2020-2023" - диапазон
-        - "2020-2023,2025" - смешанный
-        Возвращает set() годов для фильтрации или None если фильтр не указан
-        """
-        if not filter_string or filter_string.strip() == '':
-            return None
-        
-        years = set()
-        parts = filter_string.split(',')
-        
-        for part in parts:
-            part = part.strip()
-            if '-' in part:
-                # Диапазон лет
-                try:
-                    start, end = part.split('-')
-                    start_year = int(start.strip())
-                    end_year = int(end.strip())
-                    for year in range(start_year, end_year + 1):
-                        years.add(year)
-                except ValueError:
-                    self.log_warning(f"Invalid year range format: {part}")
-            else:
-                # Одиночный год
-                try:
-                    years.add(int(part))
-                except ValueError:
-                    self.log_warning(f"Invalid year format: {part}")
-        
-        return years if years else None
-    
-    def filter_by_years(self, df, year_filter):
-        """
-        Фильтрует DataFrame по годам
-        """
-        if year_filter is None or 'year' not in df.columns:
-            return df
-        
-        filtered_df = df[df['year'].isin(year_filter)].copy()
-        
-        if len(filtered_df) == 0:
-            self.log_warning(f"No papers found for years: {sorted(year_filter)}")
-            return df  # Возвращаем все данные, если фильтр ничего не нашел
-        
-        self.log_warning(f"Filtered to {len(filtered_df)} papers for years: {sorted(year_filter)}")
-        return filtered_df
     
     def parse_data(self, data_text):
         """Парсинг данных из текстового ввода с расширенной диагностикой"""
@@ -2185,432 +2113,110 @@ class ScientificDataAnalyzer:
             return None
     
     def plot_19_hierarchical_sankey(self):
-        """
-        20. Иерархическая диаграмма Санки: Domain → Field → Subfield
-        (без Topic, с учетом года публикации, нормализацией путей,
-        цветовой схемой для научной статьи и статистикой)
-        """
+        """20. Иерархическая диаграмма Санки: Domain → Field → Subfield → Topic (с ограничением по полям)"""
         try:
-            required_cols = ['Domain', 'Field', 'Subfield', 'max_annual_citations', 'year']
+            required_cols = ['Domain', 'Field', 'Subfield', 'Topic', 'max_citations']
             available_cols = [col for col in required_cols if col in self.df_processed.columns]
             
-            if len(available_cols) < 4:
-                self.log_warning(f"Missing required columns for Sankey. Available: {available_cols}")
+            if len(available_cols) < 3:
                 return None
             
-            # Фильтрация по годам (если задан фильтр)
-            filtered_df = self.df_processed.copy()
-            if self.sankey_year_filter is not None:
-                filtered_df = self.filter_by_years(filtered_df, self.sankey_year_filter)
-            
-            # Обработка пропусков (Unknown для отсутствующих значений)
-            filtered_df['Domain'] = filtered_df['Domain'].fillna('Unknown Domain')
-            filtered_df['Field'] = filtered_df['Field'].fillna('Unknown Field')
-            filtered_df['Subfield'] = filtered_df['Subfield'].fillna('Unknown Subfield')
-            
-            # Проверяем наличие данных после фильтрации
-            valid_data = filtered_df.dropna(subset=['Domain', 'Field', 'Subfield', 'max_annual_citations'])
-            if len(valid_data) < 5:
-                self.log_warning(f"Insufficient data for Sankey diagram after filtering: {len(valid_data)} rows")
+            valid_data = self.df_processed.dropna(subset=available_cols)
+            if len(valid_data) < 10:
                 return None
             
-            # Выбираем топ доменов по суммарным годовым цитированиям
-            domain_citations = valid_data.groupby('Domain')['max_annual_citations'].sum().sort_values(ascending=False)
-            top_domains = domain_citations.head(self.top_domains_sankey).index.tolist()
+            # Ограничиваем количество полей (Field) для читаемости
+            # Сначала определяем топ поля по суммарным цитированиям
+            field_citations = valid_data.groupby('Field')['max_citations'].sum().sort_values(ascending=False)
+            top_fields = field_citations.head(self.top_fields_sankey).index.tolist()
             
-            # Фильтруем данные только для топ доменов
-            filtered_data = valid_data[valid_data['Domain'].isin(top_domains)]
+            # Фильтруем данные только для топ полей
+            filtered_data = valid_data[valid_data['Field'].isin(top_fields)]
             
             if len(filtered_data) < 5:
-                self.log_warning(f"Insufficient data after filtering to top {self.top_domains_sankey} domains")
+                self.log_warning(f"Insufficient data after filtering to top {self.top_fields_sankey} fields")
                 return None
             
-            # Для каждого домена выбираем топ Field по суммарным цитированиям
-            all_top_fields = []
-            for domain in top_domains:
-                domain_data = filtered_data[filtered_data['Domain'] == domain]
-                field_citations = domain_data.groupby('Field')['max_annual_citations'].sum().sort_values(ascending=False)
-                top_fields_for_domain = field_citations.head(self.max_fields_per_domain).index.tolist()
-                all_top_fields.extend(top_fields_for_domain)
+            # Создаем иерархические связи
+            links = []
+            nodes = []
+            node_indices = {}
             
-            # Фильтруем данные для топ Field
-            filtered_data = filtered_data[filtered_data['Field'].isin(all_top_fields)]
+            def add_node(name):
+                if name not in node_indices:
+                    node_indices[name] = len(nodes)
+                    nodes.append(name)
+                return node_indices[name]
             
-            # Для каждого Field выбираем топ Subfield (ограничение до 20 наиболее релевантных)
-            all_top_subfields = []
-            for field in all_top_fields:
-                field_data = filtered_data[filtered_data['Field'] == field]
-                subfield_citations = field_data.groupby('Subfield')['max_annual_citations'].sum().sort_values(ascending=False)
-                top_subfields_for_field = subfield_citations.head(self.max_subfields_per_field).index.tolist()
-                all_top_subfields.extend(top_subfields_for_field)
+            # Агрегируем веса (суммарные цитирования)
+            hierarchy_data = filtered_data.groupby(['Domain', 'Field', 'Subfield', 'Topic']).agg({
+                'max_citations': 'sum',
+                'count': 'size'
+            }).reset_index()
             
-            # Финальная фильтрация
-            filtered_data = filtered_data[filtered_data['Subfield'].isin(all_top_subfields)]
-            
-            if len(filtered_data) < 5:
-                self.log_warning("Insufficient data after hierarchical filtering")
-                return None
-            
-            # Нормализация весов на каждом уровне отдельно
-            # Для каждой статьи делим вес на количество уникальных значений на каждом уровне
-            
-            # Группируем по комбинациям Domain, Field, Subfield для агрегации
-            hierarchy_data = []
-            
-            for idx, row in filtered_data.iterrows():
-                domain = row['Domain']
-                field = row['Field']
-                subfield = row['Subfield']
-                weight = row['max_annual_citations']
+            for _, row in hierarchy_data.iterrows():
+                domain = str(row['Domain']) if pd.notna(row['Domain']) else 'Unknown'
+                field = str(row['Field']) if pd.notna(row['Field']) else 'Unknown'
+                subfield = str(row['Subfield']) if pd.notna(row['Subfield']) else 'Unknown'
+                topic = str(row['Topic']) if pd.notna(row['Topic']) else 'Unknown'
+                weight = row['max_citations']
                 
                 if weight <= 0:
                     continue
                 
-                # Подсчет уникальных значений на каждом уровне для этой статьи
-                # (в контексте всей статьи, но так как мы уже отфильтровали данные,
-                #  считаем уникальные значения в пределах текущей строки)
-                # Для нормализации на каждом уровне отдельно:
-                # Вес для связи Domain→Field делится на количество уникальных Field для данного Domain
-                # Вес для связи Field→Subfield делится на количество уникальных Subfield для данного Field
+                # Добавляем связи
+                domain_idx = add_node(domain)
+                field_idx = add_node(field)
+                subfield_idx = add_node(subfield)
+                topic_idx = add_node(topic)
                 
-                # Находим все Field для данного Domain в этой статье
-                # (в текущей строке только одно значение, но нормализация должна учитывать
-                #  что статья может иметь несколько Field в других строках?)
-                # Для корректной нормализации нужно знать все значения для этой статьи
-                # Поэтому будем собирать данные постатейно
-                hierarchy_data.append({
-                    'doi': row.get('doi', idx),
-                    'domain': domain,
-                    'field': field,
-                    'subfield': subfield,
-                    'weight': weight
-                })
-            
-            # Создаем DataFrame для нормализации
-            norm_df = pd.DataFrame(hierarchy_data)
-            
-            # Подсчет уникальных значений на каждом уровне для каждой статьи
-            article_field_counts = norm_df.groupby(['doi', 'domain'])['field'].nunique().reset_index()
-            article_field_counts.rename(columns={'field': 'n_fields_in_domain'}, inplace=True)
-            
-            article_subfield_counts = norm_df.groupby(['doi', 'field'])['subfield'].nunique().reset_index()
-            article_subfield_counts.rename(columns={'subfield': 'n_subfields_in_field'}, inplace=True)
-            
-            # Объединяем с основными данными
-            norm_df = norm_df.merge(article_field_counts, on=['doi', 'domain'], how='left')
-            norm_df = norm_df.merge(article_subfield_counts, on=['doi', 'field'], how='left')
-            
-            # Заполняем пропуски (если нет нескольких значений, то 1)
-            norm_df['n_fields_in_domain'] = norm_df['n_fields_in_domain'].fillna(1)
-            norm_df['n_subfields_in_field'] = norm_df['n_subfields_in_field'].fillna(1)
-            
-            # Нормализованные веса
-            norm_df['weight_domain_field'] = norm_df['weight'] / norm_df['n_fields_in_domain']
-            norm_df['weight_field_subfield'] = norm_df['weight'] / norm_df['n_subfields_in_field']
-            
-            # Агрегация нормализованных весов
-            domain_field_weights = norm_df.groupby(['domain', 'field'])['weight_domain_field'].sum().reset_index()
-            field_subfield_weights = norm_df.groupby(['field', 'subfield'])['weight_field_subfield'].sum().reset_index()
-            
-            # Создаем узлы и индексы
-            nodes = []
-            node_indices = {}
-            
-            def add_node(name, level):
-                """Добавляет узел с указанием уровня для цветовой маркировки"""
-                node_key = f"{level}:{name}"
-                if node_key not in node_indices:
-                    node_indices[node_key] = len(nodes)
-                    nodes.append({
-                        'name': name,
-                        'level': level,
-                        'display_name': name[:40] + '...' if len(name) > 40 else name
-                    })
-                return node_indices[node_key]
-            
-            # Создаем узлы и связи
-            sources = []
-            targets = []
-            values = []
-            link_colors = []
-            
-            # Цветовые схемы для каждого уровня
-            # Domain: красные/розовые/оранжевые оттенки
-            domain_colors = {}
-            domain_hues = np.linspace(0.0, 0.12, max(len(top_domains), 1))  # 0.0-0.12 = красный-оранжевый
-            for i, domain in enumerate(top_domains):
-                hue = domain_hues[i % len(domain_hues)]
-                rgb = colorsys.hsv_to_rgb(hue, 0.85, 0.9)
-                domain_colors[domain] = f'rgba({int(rgb[0]*255)}, {int(rgb[1]*255)}, {int(rgb[2]*255)}, 0.9)'
-            
-            # Field: синие/фиолетовые/сиреневые оттенки
-            field_colors = {}
-            unique_fields = list(set([f for f in all_top_fields]))
-            field_hues = np.linspace(0.5, 0.75, max(len(unique_fields), 1))  # 0.5-0.75 = синий-фиолетовый
-            for i, field in enumerate(unique_fields):
-                hue = field_hues[i % len(field_hues)]
-                rgb = colorsys.hsv_to_rgb(hue, 0.7, 0.85)
-                field_colors[field] = f'rgba({int(rgb[0]*255)}, {int(rgb[1]*255)}, {int(rgb[2]*255)}, 0.9)'
-            
-            # Subfield: зеленые/морские оттенки
-            subfield_colors = {}
-            unique_subfields = list(set([sf for sf in all_top_subfields]))
-            subfield_hues = np.linspace(0.3, 0.5, max(len(unique_subfields), 1))  # 0.3-0.5 = зеленый
-            for i, subfield in enumerate(unique_subfields):
-                hue = subfield_hues[i % len(subfield_hues)]
-                rgb = colorsys.hsv_to_rgb(hue, 0.65, 0.8)
-                subfield_colors[subfield] = f'rgba({int(rgb[0]*255)}, {int(rgb[1]*255)}, {int(rgb[2]*255)}, 0.9)'
-            
-            # Создаем связи Domain → Field
-            for _, row in domain_field_weights.iterrows():
-                domain = row['domain']
-                field = row['field']
-                weight = row['weight_domain_field']
-                
-                if weight > 0 and domain in top_domains and field in all_top_fields:
-                    source_idx = add_node(domain, 'domain')
-                    target_idx = add_node(field, 'field')
-                    sources.append(source_idx)
-                    targets.append(target_idx)
-                    values.append(weight)
-                    
-                    # Градиентный цвет: смешиваем цвет домена и поля
-                    domain_rgba = domain_colors.get(domain, 'rgba(200,200,200,0.8)')
-                    field_rgba = field_colors.get(field, 'rgba(200,200,200,0.8)')
-                    
-                    # Извлекаем RGB компоненты
-                    import re
-                    domain_rgb = [int(x) for x in re.findall(r'rgba\((\d+),\s*(\d+),\s*(\d+)', domain_rgba)[0]]
-                    field_rgb = [int(x) for x in re.findall(r'rgba\((\d+),\s*(\d+),\s*(\d+)', field_rgba)[0]]
-                    
-                    mixed_rgb = [(domain_rgb[k] * 0.5 + field_rgb[k] * 0.5) for k in range(3)]
-                    link_colors.append(f'rgba({int(mixed_rgb[0])}, {int(mixed_rgb[1])}, {int(mixed_rgb[2])}, 0.7)')
-            
-            # Создаем связи Field → Subfield
-            for _, row in field_subfield_weights.iterrows():
-                field = row['field']
-                subfield = row['subfield']
-                weight = row['weight_field_subfield']
-                
-                if weight > 0 and field in all_top_fields and subfield in all_top_subfields:
-                    source_idx = add_node(field, 'field')
-                    target_idx = add_node(subfield, 'subfield')
-                    sources.append(source_idx)
-                    targets.append(target_idx)
-                    values.append(weight)
-                    
-                    # Градиентный цвет: смешиваем цвет поля и подполя
-                    field_rgba = field_colors.get(field, 'rgba(200,200,200,0.8)')
-                    subfield_rgba = subfield_colors.get(subfield, 'rgba(200,200,200,0.8)')
-                    
-                    import re
-                    field_rgb = [int(x) for x in re.findall(r'rgba\((\d+),\s*(\d+),\s*(\d+)', field_rgba)[0]]
-                    subfield_rgb = [int(x) for x in re.findall(r'rgba\((\d+),\s*(\d+),\s*(\d+)', subfield_rgba)[0]]
-                    
-                    mixed_rgb = [(field_rgb[k] * 0.5 + subfield_rgb[k] * 0.5) for k in range(3)]
-                    link_colors.append(f'rgba({int(mixed_rgb[0])}, {int(mixed_rgb[1])}, {int(mixed_rgb[2])}, 0.7)')
-            
-            if len(sources) == 0:
-                self.log_warning("No valid links created for Sankey diagram")
-                return None
-            
-            # Подготовка цветов узлов
-            node_colors = []
-            node_labels = []
-            for node in nodes:
-                if node['level'] == 'domain':
-                    node_colors.append(domain_colors.get(node['name'], 'rgba(200,100,100,0.9)'))
-                elif node['level'] == 'field':
-                    node_colors.append(field_colors.get(node['name'], 'rgba(100,100,200,0.9)'))
-                else:
-                    node_colors.append(subfield_colors.get(node['name'], 'rgba(100,200,100,0.9)'))
-                node_labels.append(node['display_name'])
-            
-            # Создаем Sankey диаграмму с цветными связями
-            fig = go.Figure(data=[go.Sankey(
-                arrangement="snap",
-                node=dict(
-                    pad=20,
-                    thickness=25,
-                    line=dict(color="black", width=0.8),
-                    label=node_labels,
-                    color=node_colors,
-                    hovertemplate='<b>%{label}</b><br>Total Flow: %{value:.1f}<extra></extra>'
-                ),
-                link=dict(
-                    source=sources,
-                    target=targets,
-                    value=values,
-                    color=link_colors,
-                    hovertemplate='%{source.label} → %{target.label}<br>Weight: %{value:.1f}<extra></extra>'
-                )
-            )])
-            
-            # ==================== РАСЧЕТ МЕТРИК КАЧЕСТВА SANKEY ====================
-            
-            total_flow = sum(values)
-            total_papers = len(filtered_data)
-            total_papers_original = len(valid_data)
-            
-            # Уникальные узлы по уровням
-            domain_nodes = [n for n in nodes if n['level'] == 'domain']
-            field_nodes = [n for n in nodes if n['level'] == 'field']
-            subfield_nodes = [n for n in nodes if n['level'] == 'subfield']
-            
-            # Coverage (процент статей, попавших в фильтрацию)
-            coverage = (total_papers / total_papers_original * 100) if total_papers_original > 0 else 0
-            
-            # Gini coefficient для потоков (неравномерность распределения)
-            sorted_values = sorted(values, reverse=True)
-            n_links = len(sorted_values)
-            if n_links > 0:
-                cumsum = np.cumsum(sorted_values)
-                # Расчет Gini для потоков
-                gini_flows = (2 * np.sum(np.arange(1, n_links + 1) * sorted_values)) / (n_links * np.sum(sorted_values)) - (n_links + 1) / n_links
-            else:
-                gini_flows = 0
-            
-            # Топ путь (самый цитируемый)
-            link_info = []
-            for i in range(len(sources)):
-                source_node = nodes[sources[i]]
-                target_node = nodes[targets[i]]
-                link_info.append({
-                    'source': source_node['name'],
-                    'source_level': source_node['level'],
-                    'target': target_node['name'],
-                    'target_level': target_node['level'],
-                    'weight': values[i]
-                })
-            
-            link_df = pd.DataFrame(link_info)
-            
-            # Находим топ путь Domain → Field → Subfield
-            top_path = None
-            top_path_weight = 0
-            
-            # Группируем по Domain-Field-Subfield (нужно восстановить полные пути)
-            # Для этого объединяем связи Domain→Field и Field→Subfield
-            domain_field_links = link_df[link_df['target_level'] == 'field']
-            field_subfield_links = link_df[link_df['target_level'] == 'subfield']
-            
-            for _, df_link in domain_field_links.iterrows():
-                domain = df_link['source']
-                field = df_link['target']
-                df_weight = df_link['weight']
-                
-                # Ищем соответствующие связи Field→Subfield
-                matching_fs = field_subfield_links[field_subfield_links['source'] == field]
-                for _, fs_link in matching_fs.iterrows():
-                    subfield = fs_link['target']
-                    fs_weight = fs_link['weight']
-                    total_path_weight = min(df_weight, fs_weight)  # Консервативная оценка
-                    
-                    if total_path_weight > top_path_weight:
-                        top_path_weight = total_path_weight
-                        top_path = f"{domain} → {field} → {subfield}"
-            
-            if top_path is None and len(domain_field_links) > 0:
-                # Если нет полных путей, берем топ Domain→Field
-                top_df = domain_field_links.loc[domain_field_links['weight'].idxmax()]
-                top_path = f"{top_df['source']} → {top_df['target']}"
-                top_path_weight = top_df['weight']
-            
-            # Статистика для информационной панели
-            sankey_stats = {
-                'total_flow': total_flow,
-                'total_nodes': len(nodes),
-                'domain_nodes': len(domain_nodes),
-                'field_nodes': len(field_nodes),
-                'subfield_nodes': len(subfield_nodes),
-                'total_links': len(sources),
-                'coverage': coverage,
-                'avg_weight_per_link': total_flow / len(sources) if len(sources) > 0 else 0,
-                'gini_coefficient_flows': gini_flows,
-                'top_path': top_path,
-                'top_path_weight': top_path_weight,
-                'year_filter_applied': self.sankey_year_filter is not None,
-                'year_filter_years': sorted(self.sankey_year_filter) if self.sankey_year_filter else None,
-                'weight_metric': self.sankey_weight_metric
-            }
+                links.append({'source': domain_idx, 'target': field_idx, 'value': weight})
+                links.append({'source': field_idx, 'target': subfield_idx, 'value': weight})
+                links.append({'source': subfield_idx, 'target': topic_idx, 'value': weight})
             
             # Сохраняем данные
             self.plot_data['19_hierarchical_sankey'] = {
-                'nodes': [{'name': n['name'], 'level': n['level'], 'display_name': n['display_name']} for n in nodes],
-                'links': [{'source': sources[i], 'target': targets[i], 'value': values[i]} for i in range(len(sources))],
-                'total_flow': total_flow,
-                'top_domains_used': top_domains,
-                'domains_limit': self.top_domains_sankey,
-                'fields_per_domain_limit': self.max_fields_per_domain,
-                'subfields_per_field_limit': self.max_subfields_per_field,
-                'statistics': sankey_stats
+                'nodes': nodes,
+                'links': links,
+                'total_weight': sum([l['value'] for l in links]),
+                'top_fields_used': top_fields,
+                'fields_limit': self.top_fields_sankey
             }
             
-            # Добавляем аннотацию со статистикой в правый нижний угол
-            stats_text = (
-                f"<b>📊 SANKEY STATISTICS</b><br>"
-                f"<br>"
-                f"Total flow (citations/year): <b>{total_flow:.0f}</b><br>"
-                f"Total nodes: <b>{len(nodes)}</b><br>"
-                f"&nbsp;&nbsp;├─ Domain nodes: {len(domain_nodes)}<br>"
-                f"&nbsp;&nbsp;├─ Field nodes: {len(field_nodes)}<br>"
-                f"&nbsp;&nbsp;└─ Subfield nodes: {len(subfield_nodes)}<br>"
-                f"Total links: <b>{len(sources)}</b><br>"
-                f"Coverage: <b>{coverage:.1f}%</b> ({total_papers}/{total_papers_original} papers)<br>"
-                f"Avg weight per link: <b>{sankey_stats['avg_weight_per_link']:.1f}</b><br>"
-                f"Gini coefficient (flows): <b>{gini_flows:.3f}</b><br>"
-                f"<br>"
-                f"<b>🏆 TOP PATH</b><br>"
-                f"{top_path if top_path else 'N/A'}<br>"
-                f"({top_path_weight:.0f} citations/year)"
-            )
-            
-            if self.sankey_year_filter:
-                stats_text += f"<br><br>⏰ Year filter: {sorted(self.sankey_year_filter)}"
-            
-            stats_text += f"<br><br>📈 Weight metric: {self.sankey_weight_metric}"
-            
-            fig.add_annotation(
-                x=0.98,
-                y=0.02,
-                xref="paper",
-                yref="paper",
-                text=stats_text,
-                showarrow=False,
-                font=dict(size=10, family="Arial, sans-serif", color="black"),
-                bgcolor="rgba(255, 255, 255, 0.95)",
-                bordercolor="black",
-                borderwidth=1,
-                borderpad=8,
-                align="left",
-                xanchor="right",
-                yanchor="bottom"
-            )
-            
-            title_suffix = ""
-            if self.sankey_year_filter:
-                title_suffix = f" (Filtered to years: {sorted(self.sankey_year_filter)})"
+            # Создаем диаграмму Санки с plotly
+            fig = go.Figure(data=[go.Sankey(
+                node=dict(
+                    pad=15,
+                    thickness=20,
+                    line=dict(color="rgba(0,0,0,0)", width=0),
+                    label=nodes,
+                    color="blue",
+                    hovertemplate='%{label}<br>Value: %{value}<extra></extra>'
+                ),
+                link=dict(
+                    source=[l['source'] for l in links],
+                    target=[l['target'] for l in links],
+                    value=[l['value'] for l in links]
+                )
+            )])
             
             fig.update_layout(
-                title_text=f"Hierarchical Knowledge Structure: Domain → Field → Subfield{title_suffix}",
-                title_font=dict(size=16, weight='bold'),
-                font_size=11,
-                width=1400,
-                height=900,
+                title_text=f"Hierarchical Knowledge Structure: Domain → Field → Subfield → Topic<br>(Top {self.top_fields_sankey} Fields by Citations)",
+                font_size=12,
+                width=1200,
+                height=800,
                 font=dict(
                     family="Arial, sans-serif",
-                    size=11,
+                    size=12,
                     color="black"
-                ),
-                plot_bgcolor='white',
-                paper_bgcolor='white'
+                )
             )
             
             # Дополнительные настройки для текста узлов
             fig.update_traces(
                 textfont=dict(
                     family="Arial, sans-serif",
-                    size=10,
+                    size=11,
                     color="black"
                 ),
                 selector=dict(type='sankey')
@@ -2619,7 +2225,7 @@ class ScientificDataAnalyzer:
             return fig
             
         except Exception as e:
-            self.log_error(f"Error in plot_19_hierarchical_sankey: {str(e)}", traceback.format_exc())
+            self.log_error(f"Error in plot_19_hierarchical_sankey: {str(e)}")
             return None
     
     def plot_20_multidimensional_scaling(self):
@@ -3064,12 +2670,7 @@ class ScientificDataAnalyzer:
                     'show_regression_trends': self.show_regression_trends,
                     'top_countries_chord': self.top_countries_chord,
                     'top_affiliations_chord': self.top_affiliations_chord,
-                    'top_fields_sankey': self.top_fields_sankey,
-                    'top_domains_sankey': self.top_domains_sankey,
-                    'max_fields_per_domain': self.max_fields_per_domain,
-                    'max_subfields_per_field': self.max_subfields_per_field,
-                    'sankey_year_filter': list(self.sankey_year_filter) if self.sankey_year_filter else None,
-                    'sankey_weight_metric': self.sankey_weight_metric
+                    'top_fields_sankey': self.top_fields_sankey
                 },
                 'dataset_statistics': {
                     'total_rows': len(self.df_processed) if self.df_processed is not None else 0,
@@ -3182,80 +2783,21 @@ def main():
             help="Выберите количество топ аффилиаций для отображения в хордовой диаграмме коллабораций"
         )
         
-        st.markdown("---")
-        st.subheader("📊 Настройки Sankey диаграммы")
-        
-        # Настройки для Sankey диаграммы
-        top_domains = st.slider(
-            "🎯 Количество доменов (Domain) в Sankey",
-            min_value=2,
-            max_value=15,
-            value=st.session_state.analyzer.top_domains_sankey if hasattr(st.session_state.analyzer, 'top_domains_sankey') else 10,
-            step=1,
-            help="Выберите количество топ доменов для отображения в Sankey диаграмме"
-        )
-        
-        max_fields = st.slider(
-            "📚 Макс. количество полей (Field) на домен",
-            min_value=3,
-            max_value=12,
-            value=st.session_state.analyzer.max_fields_per_domain if hasattr(st.session_state.analyzer, 'max_fields_per_domain') else 8,
-            step=1,
-            help="Ограничьте количество Field внутри каждого Domain для читаемости"
-        )
-        
-        max_subfields = st.slider(
-            "🔬 Макс. количество подполей (Subfield) на поле",
+        top_fields = st.slider(
+            "📚 Количество полей (Field) в Sankey диаграмме",
             min_value=5,
-            max_value=30,
-            value=st.session_state.analyzer.max_subfields_per_field if hasattr(st.session_state.analyzer, 'max_subfields_per_field') else 20,
-            step=5,
-            help="Ограничьте количество Subfield (до 20 наиболее релевантных)"
+            max_value=20,
+            value=st.session_state.analyzer.top_fields_sankey,
+            step=1,
+            help="Ограничьте количество полей для читаемости Sankey диаграммы"
         )
-        
-        st.markdown("---")
-        st.subheader("⏰ Фильтр по годам для Sankey")
-        
-        # Автоматическое определение доступных годов
-        available_years = []
-        if st.session_state.analyzer.df_processed is not None and 'year' in st.session_state.analyzer.df_processed.columns:
-            available_years = sorted(st.session_state.analyzer.df_processed['year'].dropna().unique().astype(int))
-            available_years = [y for y in available_years if y > 0]
-        
-        if available_years:
-            year_filter_input = st.text_input(
-                "Фильтр по годам (примеры: 2022, 2021,2023, 2020-2023, 2020-2023,2025)",
-                value="",
-                help="Введите года для фильтрации Sankey диаграммы. Поддерживаются: отдельные года, диапазоны, комбинации"
-            )
-            
-            if year_filter_input.strip():
-                year_filter_set = st.session_state.analyzer.parse_year_filter(year_filter_input)
-                if year_filter_set:
-                    valid_years = [y for y in year_filter_set if y in available_years]
-                    if valid_years:
-                        st.success(f"✅ Фильтр применен: {sorted(valid_years)}")
-                        st.session_state.analyzer.sankey_year_filter = valid_years
-                    else:
-                        st.warning(f"⚠️ Ни один из годов {sorted(year_filter_set)} не найден в данных. Доступны: {available_years}")
-                        st.session_state.analyzer.sankey_year_filter = None
-                else:
-                    st.session_state.analyzer.sankey_year_filter = None
-            else:
-                st.session_state.analyzer.sankey_year_filter = None
-        else:
-            st.info("📅 Данные о годах пока не загружены")
-        
-        st.markdown("---")
         
         # Применяем настройки к анализатору
         st.session_state.analyzer.update_visualization_settings(
             show_regression_trends=show_regression,
             top_countries_chord=top_countries,
             top_affiliations_chord=top_affiliations,
-            top_domains_sankey=top_domains,
-            max_fields_per_domain=max_fields,
-            max_subfields_per_field=max_subfields
+            top_fields_sankey=top_fields
         )
         
         st.markdown("---")
@@ -3365,7 +2907,7 @@ def main():
             "⏰ Временной анализ": ["10_temporal_evolution", "11_temporal_heatmap"],
             "👥 Команды и организации": ["11_team_size", "18_affiliation_chord"],
             "📊 Анализ метрик": ["12_correlation", "14_domain_citations", "20_mds"],
-            "🏛️ Иерархическая структура (Sankey)": ["19_hierarchical_sankey"]
+            "🏛️ Иерархическая структура": ["19_hierarchical_sankey"]
         }
         
         for category, plot_ids in categories.items():
