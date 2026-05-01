@@ -305,7 +305,7 @@ class ScientificDataAnalyzer:
         return df_processed
     
     # ============================================================================
-    # ФУНКЦИИ ДЛЯ ПОСТРОЕНИЯ ГРАФИКОВ (29 ВИДОВ)
+    # ФУНКЦИИ ДЛЯ ПОСТРОЕНИЯ ГРАФИКОВ (35 ВИДОВ)
     # ============================================================================
     
     # ==================== ГРАФИК 1: РАСПРЕДЕЛЕНИЕ ВНИМАНИЯ ====================
@@ -2325,609 +2325,716 @@ class ScientificDataAnalyzer:
             self.log_error(f"Error in plot_24_concept_network_weighted: {str(e)}")
             return None
     
-    # ==================== НОВЫЙ ГРАФИК 25: ПАРАЛЛЕЛЬНЫЕ КООРДИНАТЫ ====================
-    def plot_25_parallel_coordinates(self):
-        """25. Диаграмма параллельных координат для многомерного профиля статей"""
+    # ==================== НОВЫЙ ГРАФИК 25: ВРЕМЕННАЯ АКТИВНОСТЬ ТЕРМИНОВ (VIOLIN PLOT) ====================
+    def plot_25_term_temporal_density(self, hierarchy_level='Topic', top_percent=15, sort_by='first_year'):
+        """
+        25. Временная активность терминов с выбором уровня иерархии.
+        hierarchy_level: 'Topic', 'Subfield', 'Field', 'Domain', 'Concepts'
+        top_percent: процент терминов для отображения (по умолчанию 15%)
+        sort_by: 'first_year', 'peak_year', 'total_attention'
+        """
         try:
-            # Выбираем ключевые метрики
-            metrics = ['count', 'max_citations', 'max_annual_citations', 'references_count', 
-                      'author count', 'num_countries', 'article_age']
-            
-            available_metrics = [m for m in metrics if m in self.df_processed.columns]
-            
-            if len(available_metrics) < 3:
+            # Определяем колонку для анализа
+            level_col = None
+            if hierarchy_level == 'Topic' and 'Topic' in self.df_processed.columns:
+                level_col = 'Topic'
+            elif hierarchy_level == 'Subfield' and 'Subfield' in self.df_processed.columns:
+                level_col = 'Subfield'
+            elif hierarchy_level == 'Field' and 'Field' in self.df_processed.columns:
+                level_col = 'Field'
+            elif hierarchy_level == 'Domain' and 'Domain' in self.df_processed.columns:
+                level_col = 'Domain'
+            elif hierarchy_level == 'Concepts' and 'concepts_list' in self.df_processed.columns:
+                # Для Concepts нужно развернуть список
+                level_col = 'Concepts'
+            else:
+                self.log_warning(f"Column '{hierarchy_level}' not found in data")
                 return None
             
-            # Берем топ-100 статей по count для читаемости
-            plot_data = self.df_processed[available_metrics].dropna()
-            if len(plot_data) > 100:
-                plot_data = plot_data.nlargest(100, 'count')
-            
-            if len(plot_data) < 10:
+            if level_col is None:
                 return None
             
-            # Нормализуем данные для параллельных координат
-            from sklearn.preprocessing import MinMaxScaler
-            scaler = MinMaxScaler()
-            scaled_data = scaler.fit_transform(plot_data[available_metrics])
+            current_year = datetime.now().year
+            
+            # Собираем данные по терминам
+            term_data = defaultdict(lambda: {'years': [], 'counts': [], 'total_attention': 0, 'papers': []})
+            
+            if hierarchy_level == 'Concepts':
+                # Разворачиваем концепты из списка
+                for idx, row in self.df_processed.iterrows():
+                    year = row.get('year')
+                    if pd.isna(year):
+                        continue
+                    year = int(year)
+                    attention = row.get('count', 1)
+                    
+                    if isinstance(row['concepts_list'], list):
+                        for concept in row['concepts_list']:
+                            concept_clean = concept.strip()
+                            if concept_clean:
+                                term_data[concept_clean]['years'].append(year)
+                                term_data[concept_clean]['counts'].append(attention)
+                                term_data[concept_clean]['total_attention'] += attention
+                                term_data[concept_clean]['papers'].append(idx)
+            else:
+                # Обычная иерархия
+                for idx, row in self.df_processed.iterrows():
+                    term = row.get(level_col)
+                    year = row.get('year')
+                    if pd.isna(term) or pd.isna(year):
+                        continue
+                    term = str(term).strip()
+                    year = int(year)
+                    attention = row.get('count', 1)
+                    
+                    term_data[term]['years'].append(year)
+                    term_data[term]['counts'].append(attention)
+                    term_data[term]['total_attention'] += attention
+                    term_data[term]['papers'].append(idx)
+            
+            if len(term_data) < 3:
+                self.log_warning(f"Insufficient terms ({len(term_data)}) for temporal density plot")
+                return None
+            
+            # Вычисляем метрики для каждого термина
+            term_metrics = {}
+            for term, data in term_data.items():
+                years = np.array(data['years'])
+                if len(years) == 0:
+                    continue
+                
+                first_year = years.min()
+                last_year = years.max()
+                
+                # Находим год с максимальной плотностью (по количеству статей ИЛИ по сумме attention)
+                year_counts = defaultdict(float)
+                for y, att in zip(data['years'], data['counts']):
+                    year_counts[y] += att
+                
+                peak_year = max(year_counts.items(), key=lambda x: x[1])[0]
+                
+                # Средняя плотность по годам
+                all_years = range(first_year, last_year + 1)
+                densities = []
+                for y in all_years:
+                    densities.append(year_counts.get(y, 0))
+                
+                mean_density = np.mean(densities) if densities else 0
+                max_density = max(densities) if densities else 0
+                
+                term_metrics[term] = {
+                    'first_year': first_year,
+                    'last_year': last_year,
+                    'peak_year': peak_year,
+                    'total_attention': data['total_attention'],
+                    'num_papers': len(data['papers']),
+                    'years': data['years'],
+                    'counts': data['counts'],
+                    'mean_density': mean_density,
+                    'max_density': max_density,
+                    'activity_span': last_year - first_year
+                }
+            
+            if len(term_metrics) < 3:
+                self.log_warning("Insufficient valid term metrics")
+                return None
+            
+            # Отбираем топ терминов по выбранному критерию
+            if sort_by == 'total_attention':
+                sorted_terms = sorted(term_metrics.items(), key=lambda x: x[1]['total_attention'], reverse=True)
+            elif sort_by == 'activity_span':
+                sorted_terms = sorted(term_metrics.items(), key=lambda x: x[1]['activity_span'], reverse=True)
+            elif sort_by == 'peak_density':
+                sorted_terms = sorted(term_metrics.items(), key=lambda x: x[1]['max_density'], reverse=True)
+            else:  # first_year
+                sorted_terms = sorted(term_metrics.items(), key=lambda x: x[1]['first_year'])
+            
+            # Берем топ процентов
+            top_n = max(3, int(len(sorted_terms) * top_percent / 100))
+            top_terms = sorted_terms[:top_n]
+            
+            # Сохраняем данные
+            self.plot_data['25_term_temporal_density'] = {
+                'hierarchy_level': hierarchy_level,
+                'top_percent': top_percent,
+                'sort_by': sort_by,
+                'terms': [{'term': term, **metrics} for term, metrics in top_terms]
+            }
             
             # Создаем фигуру
-            fig = go.Figure()
+            fig, ax = plt.subplots(figsize=(16, 10))
             
-            # Добавляем линии для каждой статьи
-            for i in range(len(scaled_data)):
-                # Цвет по count
-                count_val = plot_data['count'].iloc[i]
-                color = f'rgba({int(255 * count_val / plot_data["count"].max())}, 100, 150, 0.5)'
+            # Подготавливаем данные для violin plot
+            violin_data = []
+            positions = []
+            term_labels = []
+            first_years = []
+            peak_years = []
+            last_years = []
+            
+            for i, (term, metrics) in enumerate(top_terms):
+                # Создаем распределение лет с весами по attention
+                weighted_years = []
+                for year, att in zip(metrics['years'], metrics['counts']):
+                    weighted_years.extend([year] * int(np.ceil(att)))
                 
-                fig.add_trace(go.Scatter(
-                    x=available_metrics,
-                    y=scaled_data[i],
-                    mode='lines+markers',
-                    line=dict(width=1, color=color),
-                    marker=dict(size=3),
-                    showlegend=False,
-                    hovertext=f"count={plot_data['count'].iloc[i]:.0f}, citations={plot_data['max_citations'].iloc[i]:.0f}",
-                    hoverinfo='text'
-                ))
+                if len(weighted_years) > 0:
+                    violin_data.append(weighted_years)
+                    positions.append(i + 1)
+                    short_term = term[:30] + '...' if len(term) > 30 else term
+                    term_labels.append(short_term)
+                    first_years.append(metrics['first_year'])
+                    peak_years.append(metrics['peak_year'])
+                    last_years.append(metrics['last_year'])
+            
+            if len(violin_data) == 0:
+                return None
+            
+            # Создаем violin plot
+            parts = ax.violinplot(violin_data, positions=positions, widths=0.7,
+                                 showmeans=False, showmedians=True, showextrema=False)
+            
+            # Настройка цветов violins
+            colors_violin = plt.cm.viridis(np.linspace(0.2, 0.8, len(violin_data)))
+            for i, pc in enumerate(parts['bodies']):
+                pc.set_facecolor(colors_violin[i])
+                pc.set_alpha(0.6)
+                pc.set_edgecolor('black')
+                pc.set_linewidth(1)
+            
+            # Добавляем медианы
+            for i, data in enumerate(violin_data):
+                median = np.median(data)
+                ax.scatter(i+1, median, color='black', s=60, zorder=5,
+                          marker='s', label='Median' if i == 0 else "")
+            
+            # Добавляем маркеры для first, peak, last
+            for i, (term, metrics) in enumerate(top_terms):
+                # First year (зеленый треугольник вверх)
+                ax.scatter(i+1, metrics['first_year'], color='green', s=100, zorder=6,
+                          marker='^', edgecolors='black', linewidth=1.5,
+                          label='First appearance' if i == 0 else "")
+                
+                # Peak year (красный ромб)
+                ax.scatter(i+1, metrics['peak_year'], color='red', s=100, zorder=6,
+                          marker='D', edgecolors='black', linewidth=1.5,
+                          label='Peak density' if i == 0 else "")
+                
+                # Last year (синий треугольник вниз)
+                ax.scatter(i+1, metrics['last_year'], color='blue', s=100, zorder=6,
+                          marker='v', edgecolors='black', linewidth=1.5,
+                          label='Last appearance' if i == 0 else "")
+            
+            # Соединяем first_year линией (показывает волну появления новых тем)
+            first_years_sorted = [first_years[i] for i in range(len(first_years))]
+            ax.plot(positions, first_years_sorted, 'g--', linewidth=2, alpha=0.7,
+                   label='Emergence wave')
+            
+            # Настройка осей
+            ax.set_xticks(positions)
+            ax.set_xticklabels(term_labels, rotation=45, ha='right', fontsize=9)
+            ax.set_xlabel(f'{hierarchy_level} (Top {top_percent}% by {sort_by.replace("_", " ")})', fontweight='bold')
+            ax.set_ylabel('Publication Year', fontweight='bold')
+            ax.set_title(f'Temporal Activity of {hierarchy_level}s: Distribution, First/Peak/Last Appearance',
+                        fontweight='bold', fontsize=16)
+            
+            # Инвертируем ось Y (чтобы свежие годы были сверху)
+            ax.invert_yaxis()
+            
+            ax.grid(True, alpha=0.3, axis='y')
+            ax.legend(loc='upper left', fontsize=9, ncol=2)
+            
+            # Добавляем аннотацию с информацией о топ-терминах
+            info_text = f"Total {hierarchy_level}s analyzed: {len(term_metrics)}\n"
+            info_text += f"Showing top {top_n} of {len(sorted_terms)} ({top_percent}%)\n"
+            info_text += f"Sorted by: {sort_by.replace('_', ' ')}"
+            
+            ax.text(0.02, 0.98, info_text, transform=ax.transAxes,
+                   fontsize=9, verticalalignment='top',
+                   bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
+            
+            plt.tight_layout()
+            return fig
+            
+        except Exception as e:
+            self.log_error(f"Error in plot_25_term_temporal_density: {str(e)}")
+            return None
+    
+    # ==================== НОВЫЙ ГРАФИК 31: АКТИВНЫЕ ЭЛЕМЕНТЫ ЗА ПОСЛЕДНИЕ 5 ЛЕТ ====================
+    def plot_31_active_elements_last_5_years(self, hierarchy_level='Topic', top_n=15):
+        """
+        31. Наиболее активные элементы иерархии за последние 5 лет.
+        Показывает total_attention и количество статей для терминов, появившихся в последние 5 лет.
+        """
+        try:
+            current_year = datetime.now().year
+            start_year = current_year - 5
+            
+            # Определяем колонку для анализа
+            level_col = None
+            if hierarchy_level == 'Topic' and 'Topic' in self.df_processed.columns:
+                level_col = 'Topic'
+            elif hierarchy_level == 'Subfield' and 'Subfield' in self.df_processed.columns:
+                level_col = 'Subfield'
+            elif hierarchy_level == 'Field' and 'Field' in self.df_processed.columns:
+                level_col = 'Field'
+            elif hierarchy_level == 'Domain' and 'Domain' in self.df_processed.columns:
+                level_col = 'Domain'
+            elif hierarchy_level == 'Concepts' and 'concepts_list' in self.df_processed.columns:
+                level_col = 'Concepts'
+            else:
+                self.log_warning(f"Column '{hierarchy_level}' not found in data")
+                return None
+            
+            if level_col is None:
+                return None
+            
+            # Фильтруем данные за последние 5 лет
+            recent_data = self.df_processed[self.df_processed['year'] >= start_year].copy()
+            
+            if len(recent_data) < 5:
+                self.log_warning(f"Insufficient recent data (only {len(recent_data)} papers in last 5 years)")
+                return None
+            
+            # Собираем данные по терминам
+            term_stats = defaultdict(lambda: {'total_attention': 0, 'num_papers': 0, 'avg_attention': 0})
+            
+            if hierarchy_level == 'Concepts':
+                for idx, row in recent_data.iterrows():
+                    attention = row.get('count', 1)
+                    if isinstance(row['concepts_list'], list):
+                        for concept in row['concepts_list']:
+                            concept_clean = concept.strip()
+                            if concept_clean:
+                                term_stats[concept_clean]['total_attention'] += attention
+                                term_stats[concept_clean]['num_papers'] += 1
+            else:
+                for idx, row in recent_data.iterrows():
+                    term = row.get(level_col)
+                    if pd.isna(term):
+                        continue
+                    term = str(term).strip()
+                    attention = row.get('count', 1)
+                    term_stats[term]['total_attention'] += attention
+                    term_stats[term]['num_papers'] += 1
+            
+            if len(term_stats) == 0:
+                self.log_warning("No terms found in recent data")
+                return None
+            
+            # Вычисляем среднее внимание
+            for term in term_stats:
+                term_stats[term]['avg_attention'] = term_stats[term]['total_attention'] / term_stats[term]['num_papers']
+            
+            # Сортируем и берем топ N
+            sorted_terms = sorted(term_stats.items(), key=lambda x: x[1]['total_attention'], reverse=True)
+            top_terms = sorted_terms[:top_n]
+            
+            # Сохраняем данные
+            self.plot_data['31_active_elements_last_5_years'] = {
+                'hierarchy_level': hierarchy_level,
+                'period': f"{start_year}-{current_year}",
+                'terms': [{'term': term, **stats} for term, stats in top_terms]
+            }
+            
+            # Создаем фигуру
+            fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(16, 8))
+            
+            terms = [t[0][:35] + '...' if len(t[0]) > 35 else t[0] for t in top_terms]
+            total_att = [t[1]['total_attention'] for t in top_terms]
+            num_papers = [t[1]['num_papers'] for t in top_terms]
+            avg_att = [t[1]['avg_attention'] for t in top_terms]
+            
+            y_pos = np.arange(len(terms))
+            
+            # График 1: Total Attention (столбцы)
+            bars1 = ax1.barh(y_pos, total_att, color='steelblue', edgecolor='black', alpha=0.8)
+            ax1.set_yticks(y_pos)
+            ax1.set_yticklabels(terms, fontsize=9)
+            ax1.set_xlabel('Total Attention (last 5 years)', fontweight='bold')
+            ax1.set_title(f'Most Active {hierarchy_level}s by Total Attention\n({start_year}-{current_year})',
+                         fontweight='bold')
+            ax1.invert_yaxis()
+            
+            # Добавляем значения и количество статей
+            for i, (bar, papers) in enumerate(zip(bars1, num_papers)):
+                width = bar.get_width()
+                ax1.text(width * 1.01, bar.get_y() + bar.get_height()/2,
+                        f'n={papers}', va='center', fontsize=8, fontweight='bold')
+            
+            ax1.grid(True, alpha=0.3, axis='x')
+            
+            # График 2: Bubble chart (Total Attention vs Avg Attention)
+            scatter = ax2.scatter(total_att, avg_att, s=np.array(num_papers) * 15,
+                                 c=total_att, cmap='plasma', alpha=0.7,
+                                 edgecolors='black', linewidth=1.5)
+            
+            ax2.set_xlabel('Total Attention', fontweight='bold')
+            ax2.set_ylabel('Average Attention per Paper', fontweight='bold')
+            ax2.set_title('Attention Distribution: Total vs Average', fontweight='bold')
+            ax2.grid(True, alpha=0.3)
+            
+            # Добавляем аннотации для топ-5
+            for i in range(min(5, len(top_terms))):
+                term_short = terms[i][:20] + '...' if len(terms[i]) > 20 else terms[i]
+                ax2.annotate(term_short, xy=(total_att[i], avg_att[i]),
+                            xytext=(5, 5), textcoords='offset points',
+                            fontsize=8, alpha=0.8)
+            
+            cbar = plt.colorbar(scatter, ax=ax2)
+            cbar.set_label('Total Attention', fontweight='bold')
+            
+            plt.suptitle(f'Most Active {hierarchy_level}s in the Last 5 Years ({start_year}-{current_year})',
+                        fontweight='bold', fontsize=16)
+            plt.tight_layout()
+            
+            return fig
+            
+        except Exception as e:
+            self.log_error(f"Error in plot_31_active_elements_last_5_years: {str(e)}")
+            return None
+    
+    # ==================== НОВЫЙ ГРАФИК 32: АНИМИРОВАННАЯ ТЕПЛОВАЯ КАРТА ЖУРНАЛОВ ====================
+    def plot_32_animated_journal_heatmap(self, top_journals=15):
+        """32. Анимированная тепловая карта журналов по годам"""
+        try:
+            required_cols = ['Full journal Name', 'year', 'max_annual_citations']
+            if not all(col in self.df_processed.columns for col in required_cols):
+                return None
+            
+            # Выбираем топ журналов
+            journal_counts = self.df_processed['Full journal Name'].value_counts()
+            top_journals_list = journal_counts.head(top_journals).index.tolist()
+            
+            heatmap_data = self.df_processed[self.df_processed['Full journal Name'].isin(top_journals_list)].copy()
+            if len(heatmap_data) == 0:
+                return None
+            
+            # Создаем данные для анимации
+            years = sorted(heatmap_data['year'].unique())
+            
+            # Создаем фреймы данных для каждого года
+            frames = []
+            for year in years:
+                year_data = heatmap_data[heatmap_data['year'] == year]
+                pivot = year_data.pivot_table(
+                    values='max_annual_citations',
+                    index='Full journal Name',
+                    columns='year',
+                    aggfunc='mean',
+                    fill_value=0
+                )
+                frames.append(pivot)
+            
+            # Создаем анимированную тепловую карту
+            fig = px.imshow(
+                frames,
+                animation_frame=0,
+                labels=dict(x="Year", y="Journal", color="Annual Citations"),
+                title=f"Animated Journal Heatmap: Annual Citation Rate Over Time (Top {top_journals} Journals)",
+                color_continuous_scale="Blues"
+            )
             
             # Настройка осей
             fig.update_layout(
-                title="Parallel Coordinates: Multidimensional Article Profiles",
-                xaxis=dict(
-                    title="Metrics",
-                    tickangle=45,
-                    tickfont=dict(size=10)
-                ),
-                yaxis=dict(
-                    title="Normalized Value (0-1)",
-                    range=[0, 1]
-                ),
                 height=600,
                 width=1000,
-                plot_bgcolor='white',
-                hovermode='closest'
+                xaxis_title="Publication Year",
+                yaxis_title="Journal"
             )
             
             # Сохраняем данные
-            self.plot_data['25_parallel_coordinates'] = {
-                'metrics': available_metrics,
-                'data_sample': plot_data.head(50).to_dict('records')
+            self.plot_data['32_animated_journal_heatmap'] = {
+                'top_journals': top_journals_list,
+                'years': years,
+                'frames_count': len(frames)
             }
             
             return fig
             
         except Exception as e:
-            self.log_error(f"Error in plot_25_parallel_coordinates: {str(e)}")
+            self.log_error(f"Error in plot_32_animated_journal_heatmap: {str(e)}")
             return None
     
-    # ==================== НОВЫЙ ГРАФИК 26: SUNBURST CHART ====================
-    def plot_26_sunburst_chart(self):
-        """26. Sunburst диаграмма: Domain → Field → Topic с цветом по среднему count"""
+    # ==================== НОВЫЙ ГРАФИК 33: АНИМИРОВАННАЯ ХОРДОВАЯ ДИАГРАММА СТРАН ====================
+    def plot_33_animated_country_chord(self, periods=4):
+        """33. Анимированная хордовая диаграмма коллабораций стран по периодам"""
         try:
-            required_cols = ['Domain', 'Field', 'Topic', 'count']
-            available_cols = [col for col in required_cols if col in self.df_processed.columns]
-            
-            if len(available_cols) < 2:
+            if 'countries_list' not in self.df_processed.columns:
                 return None
             
-            valid_data = self.df_processed.dropna(subset=available_cols)
-            if len(valid_data) < 10:
-                return None
+            current_year = datetime.now().year
+            year_min = int(self.df_processed['year'].min())
+            year_max = int(self.df_processed['year'].max())
             
-            # Агрегируем данные для sunburst
-            hierarchy_data = valid_data.groupby(['Domain', 'Field', 'Topic']).agg({
-                'count': ['sum', 'mean', 'size']
-            }).reset_index()
+            # Создаем периоды
+            period_length = max(1, (year_max - year_min) // periods)
+            periods_list = []
+            for i in range(periods):
+                start = year_min + i * period_length
+                end = start + period_length - 1 if i < periods - 1 else year_max
+                periods_list.append((start, end, f"{start}-{end}"))
             
-            hierarchy_data.columns = ['Domain', 'Field', 'Topic', 'total_attention', 'mean_attention', 'num_papers']
+            # Создаем фигуру с субплотами
+            fig, axes = plt.subplots(2, 2, figsize=(16, 16))
+            axes = axes.flatten()
             
-            # Убираем пустые значения
-            hierarchy_data = hierarchy_data[hierarchy_data['Domain'].notna()]
-            hierarchy_data = hierarchy_data[hierarchy_data['Field'].notna()]
-            hierarchy_data = hierarchy_data[hierarchy_data['Topic'].notna()]
+            for idx, (start, end, label) in enumerate(periods_list):
+                if idx >= len(axes):
+                    break
+                
+                # Фильтруем данные за период
+                period_data = self.df_processed[(self.df_processed['year'] >= start) & 
+                                                (self.df_processed['year'] <= end)]
+                
+                if len(period_data) < 10:
+                    axes[idx].text(0.5, 0.5, f"Insufficient data\nfor {label}",
+                                  ha='center', va='center', transform=axes[idx].transAxes)
+                    axes[idx].axis('off')
+                    continue
+                
+                # Собираем коллаборации
+                country_pairs = []
+                country_weights = defaultdict(float)
+                
+                for _, row in period_data.iterrows():
+                    if isinstance(row['countries_list'], list) and len(row['countries_list']) >= 2:
+                        countries = [c.strip().upper() for c in row['countries_list']]
+                        weight = row.get('count', 1)
+                        
+                        for country in countries:
+                            country_weights[country] += weight
+                        
+                        for i in range(len(countries)):
+                            for j in range(i+1, len(countries)):
+                                pair = tuple(sorted([countries[i], countries[j]]))
+                                country_pairs.append((pair, weight))
+                
+                if len(country_weights) < 3:
+                    axes[idx].text(0.5, 0.5, f"Few collaborations\nin {label}",
+                                  ha='center', va='center', transform=axes[idx].transAxes)
+                    axes[idx].axis('off')
+                    continue
+                
+                # Выбираем топ стран
+                top_countries = sorted(country_weights.items(), key=lambda x: x[1], reverse=True)[:10]
+                top_names = [c[0] for c in top_countries]
+                
+                # Создаем матрицу связей
+                n = len(top_names)
+                country_to_idx = {name: i for i, name in enumerate(top_names)}
+                adj_matrix = np.zeros((n, n))
+                
+                for (c1, c2), weight in country_pairs:
+                    if c1 in country_to_idx and c2 in country_to_idx:
+                        i, j = country_to_idx[c1], country_to_idx[c2]
+                        adj_matrix[i, j] += weight
+                        adj_matrix[j, i] += weight
+                
+                # Визуализация как тепловой карты (для простоты анимации)
+                im = axes[idx].imshow(adj_matrix, cmap='Blues', vmin=0)
+                axes[idx].set_xticks(range(n))
+                axes[idx].set_yticks(range(n))
+                axes[idx].set_xticklabels(top_names, rotation=45, ha='right', fontsize=8)
+                axes[idx].set_yticklabels(top_names, fontsize=8)
+                axes[idx].set_title(f"Country Collaborations\n{label}", fontweight='bold')
+                
+                # Добавляем значения
+                for i in range(n):
+                    for j in range(n):
+                        if adj_matrix[i, j] > 0:
+                            axes[idx].text(j, i, f'{adj_matrix[i, j]:.0f}',
+                                         ha='center', va='center', fontsize=7)
             
-            if len(hierarchy_data) == 0:
-                return None
-            
-            # Создаем sunburst диаграмму
-            fig = px.sunburst(
-                hierarchy_data,
-                path=['Domain', 'Field', 'Topic'],
-                values='total_attention',
-                color='mean_attention',
-                color_continuous_scale='RdBu',
-                title="Sunburst Chart: Knowledge Structure (Domain → Field → Topic)<br>Color = Mean Attention, Size = Total Attention",
-                hover_data={'num_papers': True, 'mean_attention': ':.2f'}
-            )
-            
-            fig.update_layout(
-                width=1000,
-                height=800,
-                font=dict(size=11)
-            )
+            plt.suptitle('Animated Country Collaboration Heatmaps by Period', fontweight='bold', fontsize=16)
+            plt.tight_layout()
             
             # Сохраняем данные
-            self.plot_data['26_sunburst_chart'] = hierarchy_data.head(100).to_dict('records')
-            
-            return fig
-            
-        except Exception as e:
-            self.log_error(f"Error in plot_26_sunburst_chart: {str(e)}")
-            return None
-    
-    # ==================== НОВЫЙ ГРАФИК 27: 3D BUBBLE CHART ====================
-    def plot_27_3d_bubble_chart(self):
-        """27. 3D пузырьковая диаграмма: count vs max_citations vs references_count"""
-        try:
-            required_cols = ['count', 'max_citations', 'references_count', 'author count', 'num_countries']
-            if not all(col in self.df_processed.columns for col in required_cols):
-                return None
-            
-            valid_data = self.df_processed.dropna(subset=required_cols)
-            valid_data = valid_data[valid_data['max_citations'] > 0]
-            
-            if len(valid_data) < 10:
-                return None
-            
-            # Берем топ-200 для читаемости
-            if len(valid_data) > 200:
-                valid_data = valid_data.nlargest(200, 'count')
-            
-            fig = go.Figure(data=[go.Scatter3d(
-                x=valid_data['count'],
-                y=valid_data['max_citations'],
-                z=valid_data['references_count'],
-                mode='markers',
-                marker=dict(
-                    size=valid_data['author count'] * 3,
-                    color=valid_data['num_countries'],
-                    colorscale='Viridis',
-                    showscale=True,
-                    colorbar=dict(title="Number of Countries"),
-                    opacity=0.7,
-                    line=dict(width=0.5, color='black')
-                ),
-                text=valid_data['Title'],
-                hoverinfo='text',
-                hovertemplate='<b>%{text}</b><br>' +
-                              'Count: %{x}<br>' +
-                              'Max Citations: %{y}<br>' +
-                              'References: %{z}<br>' +
-                              'Authors: %{marker.size:.0f}<br>' +
-                              'Countries: %{marker.color}<extra></extra>'
-            )])
-            
-            fig.update_layout(
-                title="3D Bubble Chart: Attention vs Citations vs References",
-                scene=dict(
-                    xaxis_title="Local Mentions (count)",
-                    yaxis_title="Max Citations (max(CR, OA))",
-                    zaxis_title="Number of References",
-                    camera=dict(eye=dict(x=1.5, y=1.5, z=1.5))
-                ),
-                width=1000,
-                height=800,
-                margin=dict(l=0, r=0, b=0, t=50)
-            )
-            
-            # Сохраняем данные
-            self.plot_data['27_3d_bubble_chart'] = valid_data[required_cols].head(100).to_dict('records')
-            
-            return fig
-            
-        except Exception as e:
-            self.log_error(f"Error in plot_27_3d_bubble_chart: {str(e)}")
-            return None
-    
-    # ==================== НОВЫЙ ГРАФИК 28: СЕТЬ АВТОРЫ-ЖУРНАЛЫ-ТЕМЫ ====================
-    def plot_28_network_authors_journals_topics(self):
-        """28. Сетевой граф: Авторы ↔ Журналы ↔ Темы"""
-        try:
-            if 'authors_list' not in self.df_processed.columns or 'Full journal Name' not in self.df_processed.columns:
-                return None
-            
-            # Ограничиваем топ-10 авторов по count для читаемости
-            # Сначала собираем суммарный count по авторам
-            author_attention = defaultdict(float)
-            for idx, row in self.df_processed.iterrows():
-                if isinstance(row['authors_list'], list):
-                    weight = row.get('count', 1)
-                    for author in row['authors_list']:
-                        if author.strip():
-                            author_attention[author.strip()] += weight
-            
-            top_authors = [a for a, _ in sorted(author_attention.items(), key=lambda x: x[1], reverse=True)[:15]]
-            
-            # Топ-10 журналов
-            top_journals = self.df_processed['Full journal Name'].value_counts().head(10).index.tolist()
-            
-            # Топ-10 концептов
-            all_concepts = []
-            for concepts in self.df_processed['concepts_list']:
-                if isinstance(concepts, list):
-                    all_concepts.extend([c.strip() for c in concepts])
-            concept_counts = pd.Series(all_concepts).value_counts()
-            top_concepts = concept_counts.head(10).index.tolist()
-            
-            # Создаем граф
-            G = nx.Graph()
-            
-            # Добавляем узлы
-            for author in top_authors:
-                G.add_node(author, type='author', attention=author_attention[author])
-            for journal in top_journals:
-                G.add_node(journal, type='journal')
-            for concept in top_concepts:
-                G.add_node(concept, type='concept')
-            
-            # Добавляем ребра (автор-журнал)
-            for idx, row in self.df_processed.iterrows():
-                if isinstance(row['authors_list'], list) and row['Full journal Name'] in top_journals:
-                    weight = row.get('count', 1)
-                    for author in row['authors_list']:
-                        if author in top_authors:
-                            if G.has_edge(author, row['Full journal Name']):
-                                G[author][row['Full journal Name']]['weight'] += weight
-                            else:
-                                G.add_edge(author, row['Full journal Name'], weight=weight)
-            
-            # Добавляем ребра (журнал-концепт)
-            for idx, row in self.df_processed.iterrows():
-                if row['Full journal Name'] in top_journals and isinstance(row['concepts_list'], list):
-                    weight = row.get('count', 1)
-                    for concept in row['concepts_list']:
-                        if concept.strip() in top_concepts:
-                            if G.has_edge(row['Full journal Name'], concept.strip()):
-                                G[row['Full journal Name']][concept.strip()]['weight'] += weight
-                            else:
-                                G.add_edge(row['Full journal Name'], concept.strip(), weight=weight)
-            
-            if len(G.nodes()) == 0:
-                return None
-            
-            # Позиционирование узлов
-            pos = nx.spring_layout(G, k=1.5, seed=42)
-            
-            # Разделяем узлы по типам
-            author_nodes = [n for n in G.nodes() if G.nodes[n].get('type') == 'author']
-            journal_nodes = [n for n in G.nodes() if G.nodes[n].get('type') == 'journal']
-            concept_nodes = [n for n in G.nodes() if G.nodes[n].get('type') == 'concept']
-            
-            # Создаем фигуру plotly
-            fig = go.Figure()
-            
-            # Добавляем ребра
-            for u, v, data in G.edges(data=True):
-                weight = data.get('weight', 1)
-                line_width = 1 + weight / 10
-                
-                fig.add_trace(go.Scatter(
-                    x=[pos[u][0], pos[v][0]],
-                    y=[pos[u][1], pos[v][1]],
-                    mode='lines',
-                    line=dict(width=line_width, color='lightgray'),
-                    hoverinfo='none',
-                    showlegend=False
-                ))
-            
-            # Добавляем узлы-авторы
-            if author_nodes:
-                x_author = [pos[n][0] for n in author_nodes]
-                y_author = [pos[n][1] for n in author_nodes]
-                sizes = [G.nodes[n].get('attention', 1) * 10 + 20 for n in author_nodes]
-                
-                fig.add_trace(go.Scatter(
-                    x=x_author,
-                    y=y_author,
-                    mode='markers+text',
-                    marker=dict(size=sizes, color='#2E86AB', line=dict(width=1, color='black')),
-                    text=[n[:15] + '...' if len(n) > 15 else n for n in author_nodes],
-                    textposition='top center',
-                    textfont=dict(size=9),
-                    name='Authors',
-                    hovertemplate='<b>%{text}</b><br>Attention: %{marker.size}<extra></extra>'
-                ))
-            
-            # Добавляем узлы-журналы
-            if journal_nodes:
-                x_journal = [pos[n][0] for n in journal_nodes]
-                y_journal = [pos[n][1] for n in journal_nodes]
-                
-                fig.add_trace(go.Scatter(
-                    x=x_journal,
-                    y=y_journal,
-                    mode='markers+text',
-                    marker=dict(size=25, color='#C73E1D', line=dict(width=1, color='black'), symbol='square'),
-                    text=[n[:20] + '...' if len(n) > 20 else n for n in journal_nodes],
-                    textposition='top center',
-                    textfont=dict(size=8),
-                    name='Journals',
-                    hovertemplate='<b>%{text}</b><extra></extra>'
-                ))
-            
-            # Добавляем узлы-концепты
-            if concept_nodes:
-                x_concept = [pos[n][0] for n in concept_nodes]
-                y_concept = [pos[n][1] for n in concept_nodes]
-                
-                fig.add_trace(go.Scatter(
-                    x=x_concept,
-                    y=y_concept,
-                    mode='markers+text',
-                    marker=dict(size=20, color='#6B8E23', line=dict(width=1, color='black'), symbol='diamond'),
-                    text=[n[:15] + '...' if len(n) > 15 else n for n in concept_nodes],
-                    textposition='top center',
-                    textfont=dict(size=8),
-                    name='Concepts',
-                    hovertemplate='<b>%{text}</b><extra></extra>'
-                ))
-            
-            fig.update_layout(
-                title="Network Graph: Authors ↔ Journals ↔ Topics",
-                xaxis=dict(visible=False),
-                yaxis=dict(visible=False),
-                plot_bgcolor='white',
-                width=1200,
-                height=900,
-                hovermode='closest',
-                legend=dict(x=0.02, y=0.98, bgcolor='rgba(255,255,255,0.8)')
-            )
-            
-            # Сохраняем данные
-            self.plot_data['28_network_authors_journals_topics'] = {
-                'authors': author_nodes,
-                'journals': journal_nodes,
-                'concepts': concept_nodes,
-                'edges_count': G.number_of_edges()
+            self.plot_data['33_animated_country_chord'] = {
+                'periods': periods_list,
+                'total_periods': periods
             }
             
             return fig
             
         except Exception as e:
-            self.log_error(f"Error in plot_28_network_authors_journals_topics: {str(e)}")
+            self.log_error(f"Error in plot_33_animated_country_chord: {str(e)}")
             return None
     
-    # ==================== НОВЫЙ ГРАФИК 29: АНИМИРОВАННАЯ ПУЗЫРЬКОВАЯ ДИАГРАММА ====================
-    def plot_29_animated_bubble_chart(self):
-        """29. Анимированная пузырьковая диаграмма по годам: count vs max_citations"""
+    # ==================== НОВЫЙ ГРАФИК 34: АНИМИРОВАННАЯ КАРТА МИРА ====================
+    def plot_34_animated_worldmap(self):
+        """34. Анимированная карта мира с пузырьками по странам (внимание по годам)"""
         try:
-            required_cols = ['year', 'count', 'max_citations', 'author count', 'num_countries']
-            if not all(col in self.df_processed.columns for col in required_cols):
+            if 'countries_list' not in self.df_processed.columns:
                 return None
             
-            valid_data = self.df_processed.dropna(subset=required_cols)
-            valid_data = valid_data[valid_data['max_citations'] > 0]
-            valid_data = valid_data[valid_data['year'].notna()]
+            # Собираем данные по странам и годам
+            country_year_data = defaultdict(lambda: defaultdict(float))
             
-            if len(valid_data) < 10:
+            for idx, row in self.df_processed.iterrows():
+                year = row.get('year')
+                if pd.isna(year):
+                    continue
+                year = int(year)
+                attention = row.get('count', 1)
+                
+                if isinstance(row['countries_list'], list):
+                    for country in row['countries_list']:
+                        country_clean = country.strip().upper()
+                        if country_clean:
+                            country_year_data[country_clean][year] += attention
+            
+            if len(country_year_data) == 0:
                 return None
             
-            # Преобразуем год в int
-            valid_data['year'] = valid_data['year'].astype(int)
+            # Подготавливаем данные для plotly
+            years = sorted(set(y for country in country_year_data.values() for y in country.keys()))
             
-            # Создаем анимированную диаграмму
-            fig = px.scatter(
-                valid_data,
-                x='count',
-                y='max_citations',
-                size='author count',
-                color='num_countries',
-                hover_name='Title',
+            # Создаем DataFrame для всех лет
+            data_rows = []
+            for country, year_dict in country_year_data.items():
+                for year in years:
+                    attention = year_dict.get(year, 0)
+                    if attention > 0:
+                        data_rows.append({'country': country, 'year': year, 'attention': attention})
+            
+            df_map = pd.DataFrame(data_rows)
+            
+            if len(df_map) == 0:
+                return None
+            
+            # Создаем анимированную карту мира
+            fig = px.scatter_geo(
+                df_map,
+                locations='country',
+                locationmode='country names',
+                size='attention',
+                hover_name='country',
                 animation_frame='year',
-                animation_group='doi',
+                projection='natural earth',
+                title='Animated World Map: Research Attention by Country Over Time',
                 size_max=50,
-                color_continuous_scale='Viridis',
-                title="Animated Bubble Chart: Attention vs Citations Over Time",
-                labels={
-                    'count': 'Local Mentions (count)',
-                    'max_citations': 'Max Citations (max(CR, OA))',
-                    'author count': 'Number of Authors',
-                    'num_countries': 'Number of Countries'
-                }
+                color='attention',
+                color_continuous_scale='Viridis'
             )
             
             fig.update_layout(
-                xaxis=dict(title="Local Mentions (count)", type="log"),
-                yaxis=dict(title="Max Citations (max(CR, OA))", type="log"),
                 height=700,
-                width=1000,
-                hovermode='closest'
+                width=1200,
+                geo=dict(
+                    showframe=False,
+                    showcoastlines=True,
+                    coastlinecolor='gray',
+                    showland=True,
+                    landcolor='rgb(240, 240, 240)',
+                    showocean=True,
+                    oceancolor='rgb(200, 220, 240)'
+                )
             )
             
             # Сохраняем данные
-            self.plot_data['29_animated_bubble_chart'] = valid_data[required_cols].to_dict('records')
+            self.plot_data['34_animated_worldmap'] = {
+                'countries': list(country_year_data.keys()),
+                'years': years,
+                'total_attention': sum(sum(d.values()) for d in country_year_data.values())
+            }
             
             return fig
             
         except Exception as e:
-            self.log_error(f"Error in plot_29_animated_bubble_chart: {str(e)}")
+            self.log_error(f"Error in plot_34_animated_worldmap: {str(e)}")
             return None
     
-    # ==================== НОВЫЙ ГРАФИК 30: ХОРДОВАЯ ДИАГРАММА ТЕМ ====================
-    def plot_30_topic_chord_diagram(self):
-        """30. Хордовая диаграмма совместной встречаемости тем (Topic)"""
+    # ==================== НОВЫЙ ГРАФИК 35: АНИМИРОВАННАЯ ГИСТОГРАММА ТОП-10 ТЕМ ====================
+    def plot_35_animated_top10_topics(self):
+        """35. Анимированная гистограмма топ-10 тем по годам"""
         try:
             if 'Topic' not in self.df_processed.columns:
                 return None
             
-            # Собираем данные о совместной встречаемости Topic
-            topic_pairs = []
-            topic_weights = defaultdict(float)
+            # Собираем данные по темам и годам
+            topic_year_data = defaultdict(lambda: defaultdict(float))
             
             for idx, row in self.df_processed.iterrows():
-                topic = row['Topic']
-                if pd.notna(topic) and str(topic).strip():
-                    topic_str = str(topic).strip()
-                    weight = row.get('count', 1)
-                    topic_weights[topic_str] += weight
+                topic = row.get('Topic')
+                year = row.get('year')
+                if pd.isna(topic) or pd.isna(year):
+                    continue
+                topic = str(topic).strip()
+                year = int(year)
+                attention = row.get('count', 1)
+                
+                topic_year_data[topic][year] += attention
             
-            if len(topic_weights) < 3:
-                self.log_warning("Insufficient data for topic chord diagram")
+            if len(topic_year_data) == 0:
                 return None
             
-            # Выбираем топ N тем
-            top_topics = sorted(topic_weights.items(), key=lambda x: x[1], reverse=True)[:15]
+            # Определяем топ-10 тем по суммарному вниманию
+            total_by_topic = {topic: sum(year_dict.values()) for topic, year_dict in topic_year_data.items()}
+            top_topics = sorted(total_by_topic.items(), key=lambda x: x[1], reverse=True)[:10]
             top_topic_names = [t[0] for t in top_topics]
             
-            # Создаем матрицу связей (совместная встречаемость тем в разных статьях? 
-            # Topic уникален для статьи, поэтому связи строим через общие концепты или поля)
-            # Альтернатива: используем Subfield или Field для связей
+            # Подготавливаем данные для анимации
+            years = sorted(set(y for topic in top_topic_names for y in topic_year_data[topic].keys()))
             
-            if 'Subfield' in self.df_processed.columns:
-                # Строим связи через общий Subfield
-                subfield_to_topics = defaultdict(list)
-                for idx, row in self.df_processed.iterrows():
-                    topic = row['Topic']
-                    subfield = row['Subfield']
-                    if pd.notna(topic) and pd.notna(subfield):
-                        subfield_to_topics[str(subfield)].append(str(topic))
-                
-                n = len(top_topic_names)
-                topic_to_idx = {name: i for i, name in enumerate(top_topic_names)}
-                adjacency_matrix = np.zeros((n, n))
-                
-                for subfield, topics in subfield_to_topics.items():
-                    unique_topics = list(set(topics))
-                    for i in range(len(unique_topics)):
-                        for j in range(i+1, len(unique_topics)):
-                            if unique_topics[i] in topic_to_idx and unique_topics[j] in topic_to_idx:
-                                i_idx = topic_to_idx[unique_topics[i]]
-                                j_idx = topic_to_idx[unique_topics[j]]
-                                adjacency_matrix[i_idx, j_idx] += 1
-                                adjacency_matrix[j_idx, i_idx] += 1
-                
-                # Создаем цветовую схему
-                colors = []
-                for i in range(n):
-                    hue = i / n
-                    rgb = colorsys.hsv_to_rgb(hue, 0.7, 0.9)
-                    color_hex = '#{:02x}{:02x}{:02x}'.format(int(rgb[0]*255), int(rgb[1]*255), int(rgb[2]*255))
-                    colors.append(color_hex)
-                
-                # Расставляем узлы по кругу
-                angles = np.linspace(0, 2 * np.pi, n, endpoint=False)
-                radius = 1.0
-                x_positions = radius * np.cos(angles)
-                y_positions = radius * np.sin(angles)
-                
-                # Позиции для текста снаружи
-                text_radius = 1.25
-                text_x = text_radius * np.cos(angles)
-                text_y = text_radius * np.sin(angles)
-                
-                # Создаем фигуру
-                fig = go.Figure()
-                
-                # Добавляем внешние метки
-                fig.add_trace(go.Scatter(
-                    x=text_x,
-                    y=text_y,
-                    mode='text',
-                    text=top_topic_names,
-                    textposition='middle center',
-                    textfont=dict(size=10, color='black', family='Arial, sans-serif'),
-                    hovertext=[f"<b>{name}</b><br>Total weight: {weight:.1f}" for name, weight in top_topics],
-                    hoverinfo='text',
-                    showlegend=False
-                ))
-                
-                # Добавляем узлы
-                fig.add_trace(go.Scatter(
-                    x=x_positions,
-                    y=y_positions,
-                    mode='markers',
-                    marker=dict(size=20, color=colors, line=dict(color='black', width=1.5)),
-                    hovertext=[f"<b>{name}</b><br>Total weight: {weight:.1f}" for name, weight in top_topics],
-                    hoverinfo='text',
-                    showlegend=False
-                ))
-                
-                # Добавляем хорды
-                max_weight = max(adjacency_matrix.flatten()) if adjacency_matrix.size > 0 else 1
-                
-                for i in range(n):
-                    for j in range(i+1, n):
-                        weight = adjacency_matrix[i, j]
-                        if weight > 0:
-                            t = np.linspace(0, 1, 100)
-                            p0 = np.array([x_positions[i], y_positions[i]])
-                            p3 = np.array([x_positions[j], y_positions[j]])
-                            
-                            mid_angle = (angles[i] + angles[j]) / 2
-                            if abs(angles[i] - angles[j]) > np.pi:
-                                mid_angle += np.pi
-                            control_offset = 0.4 * (1 + weight / max_weight)
-                            ctrl_point = np.array([control_offset * np.cos(mid_angle), control_offset * np.sin(mid_angle)])
-                            
-                            curve_x = (1-t)**3 * p0[0] + 3*(1-t)**2*t * ctrl_point[0] + 3*(1-t)*t**2 * ctrl_point[0] + t**3 * p3[0]
-                            curve_y = (1-t)**3 * p0[1] + 3*(1-t)**2*t * ctrl_point[1] + 3*(1-t)*t**2 * ctrl_point[1] + t**3 * p3[1]
-                            
-                            start_rgb = [int(colors[i][1:3], 16), int(colors[i][3:5], 16), int(colors[i][5:7], 16)]
-                            end_rgb = [int(colors[j][1:3], 16), int(colors[j][3:5], 16), int(colors[j][5:7], 16)]
-                            mixed_rgb = [(start_rgb[k] + end_rgb[k]) // 2 for k in range(3)]
-                            chord_color = f'rgba({mixed_rgb[0]}, {mixed_rgb[1]}, {mixed_rgb[2]}, 0.8)'
-                            
-                            line_width = 2 + 10 * weight / max_weight
-                            
-                            fig.add_trace(go.Scatter(
-                                x=curve_x,
-                                y=curve_y,
-                                mode='lines',
-                                line=dict(width=line_width, color=chord_color),
-                                hoverinfo='none',
-                                showlegend=False
-                            ))
-                
-                # Добавляем внутренний круг
-                theta = np.linspace(0, 2*np.pi, 100)
-                inner_radius = 0.85
-                fig.add_trace(go.Scatter(
-                    x=inner_radius * np.cos(theta),
-                    y=inner_radius * np.sin(theta),
-                    mode='lines',
-                    line=dict(color='white', width=2),
-                    fill='toself',
-                    fillcolor='rgba(240, 240, 240, 0.3)',
-                    hoverinfo='none',
-                    showlegend=False
-                ))
-                
-                fig.update_layout(
-                    title=f"Topic Co-occurrence Chord Diagram (Top {len(top_topics)} Topics)",
-                    width=1000,
-                    height=1000,
-                    xaxis=dict(visible=False, range=[-1.5, 1.5], scaleanchor="y", scaleratio=1),
-                    yaxis=dict(visible=False, range=[-1.5, 1.5]),
-                    plot_bgcolor='white',
-                    paper_bgcolor='white',
-                    showlegend=False,
-                    hovermode='closest'
-                )
-                
-                # Сохраняем данные
-                self.plot_data['30_topic_chord_diagram'] = {
-                    'topics': top_topic_names,
-                    'adjacency_matrix': adjacency_matrix.tolist()
-                }
-                
-                return fig
-            else:
-                self.log_warning("Subfield column not found for topic chord diagram")
+            # Создаем фреймы для каждого года
+            frames_data = []
+            for year in sorted(years):
+                year_data = []
+                for topic in top_topic_names:
+                    attention = topic_year_data[topic].get(year, 0)
+                    year_data.append({'topic': topic[:30] + '...' if len(topic) > 30 else topic, 
+                                     'attention': attention, 'year': year})
+                frames_data.extend(year_data)
+            
+            df_topics = pd.DataFrame(frames_data)
+            
+            if len(df_topics) == 0:
                 return None
             
+            # Создаем анимированную горизонтальную гистограмму
+            fig = px.bar(
+                df_topics,
+                x='attention',
+                y='topic',
+                animation_frame='year',
+                orientation='h',
+                title='Top 10 Research Topics Evolution Over Time',
+                labels={'attention': 'Attention (Mentions)', 'topic': 'Research Topic'},
+                color='attention',
+                color_continuous_scale='Viridis',
+                range_x=[0, df_topics['attention'].max() * 1.1]
+            )
+            
+            fig.update_layout(
+                height=600,
+                width=1000,
+                yaxis=dict(categoryorder='total ascending'),
+                xaxis_title="Attention (Mentions)",
+                yaxis_title="Research Topic"
+            )
+            
+            # Сохраняем данные
+            self.plot_data['35_animated_top10_topics'] = {
+                'top_topics': top_topic_names,
+                'years': years,
+                'total_attention': sum(total_by_topic.values())
+            }
+            
+            return fig
+            
         except Exception as e:
-            self.log_error(f"Error in plot_30_topic_chord_diagram: {str(e)}")
+            self.log_error(f"Error in plot_35_animated_top10_topics: {str(e)}")
             return None
     
     def generate_all_plots(self, selected_plots=None):
-        """Генерация всех графиков с прогресс-баром (29 графиков)"""
+        """Генерация всех графиков с прогресс-баром (35 графиков)"""
         self.all_figures = {}
         self.plot_data = {}
         self.errors = []
         self.warnings = []
         
-        # Обновленный список всех функций графиков (30 графиков после добавления новых)
+        # Обновленный список всех функций графиков (35 графиков)
         plot_functions = [
             ("1_distribution", "1. Distribution of Attention", self.plot_1_distribution_attention),
             ("2_country_chord", "2. Country Collaboration Chord Diagram", self.plot_2_country_chord_diagram),
@@ -2953,12 +3060,17 @@ class ScientificDataAnalyzer:
             ("22_hierarchical_sankey", "22. Hierarchical Sankey Diagram", self.plot_22_hierarchical_sankey),
             ("23_mds", "23. Multidimensional Scaling", self.plot_23_multidimensional_scaling),
             ("24_concept_network", "24. Weighted Concept Network", self.plot_24_concept_network_weighted),
-            ("25_parallel_coordinates", "25. Parallel Coordinates", self.plot_25_parallel_coordinates),
+            ("25_term_temporal", "25. Term Temporal Density (Violin Plot)", lambda: self.plot_25_term_temporal_density('Topic', 15, 'first_year')),
             ("26_sunburst", "26. Sunburst Chart", self.plot_26_sunburst_chart),
             ("27_3d_bubble", "27. 3D Bubble Chart", self.plot_27_3d_bubble_chart),
             ("28_network", "28. Network: Authors-Journals-Topics", self.plot_28_network_authors_journals_topics),
             ("29_animated_bubble", "29. Animated Bubble Chart", self.plot_29_animated_bubble_chart),
-            ("30_topic_chord", "30. Topic Chord Diagram", self.plot_30_topic_chord_diagram)
+            ("30_topic_chord", "30. Topic Chord Diagram", self.plot_30_topic_chord_diagram),
+            ("31_active_elements_5y", "31. Active Elements (Last 5 Years)", lambda: self.plot_31_active_elements_last_5_years('Topic', 15)),
+            ("32_animated_journal_heatmap", "32. Animated Journal Heatmap", lambda: self.plot_32_animated_journal_heatmap(15)),
+            ("33_animated_country_chord", "33. Animated Country Chord Diagram", lambda: self.plot_33_animated_country_chord(4)),
+            ("34_animated_worldmap", "34. Animated World Map", self.plot_34_animated_worldmap),
+            ("35_animated_top10_topics", "35. Animated Top-10 Topics", self.plot_35_animated_top10_topics)
         ]
         
         # Если выбраны определенные графики
@@ -3246,12 +3358,17 @@ def main():
         ("22_hierarchical_sankey", "22. Hierarchical Sankey Diagram"),
         ("23_mds", "23. Multidimensional Scaling"),
         ("24_concept_network", "24. Weighted Concept Network"),
-        ("25_parallel_coordinates", "25. Parallel Coordinates"),
+        ("25_term_temporal", "25. Term Temporal Density (Violin Plot)"),
         ("26_sunburst", "26. Sunburst Chart"),
         ("27_3d_bubble", "27. 3D Bubble Chart"),
         ("28_network", "28. Network: Authors-Journals-Topics"),
         ("29_animated_bubble", "29. Animated Bubble Chart"),
-        ("30_topic_chord", "30. Topic Chord Diagram")
+        ("30_topic_chord", "30. Topic Chord Diagram"),
+        ("31_active_elements_5y", "31. Active Elements (Last 5 Years)"),
+        ("32_animated_journal_heatmap", "32. Animated Journal Heatmap"),
+        ("33_animated_country_chord", "33. Animated Country Chord Diagram"),
+        ("34_animated_worldmap", "34. Animated World Map"),
+        ("35_animated_top10_topics", "35. Animated Top-10 Topics")
     ]
     
     # Инициализация состояния сессии
@@ -3317,6 +3434,55 @@ def main():
             show_regression_trends=show_regression,
             top_countries_chord=top_countries,
             top_fields_sankey=top_fields
+        )
+        
+        st.markdown("---")
+        
+        # Настройки для графика временной плотности
+        st.subheader("📈 Настройки Temporal Density Plot")
+        
+        hierarchy_level = st.selectbox(
+            "Уровень иерархии",
+            options=["Topic", "Subfield", "Field", "Domain", "Concepts"],
+            index=0,
+            help="Выберите уровень детализации для анализа временной активности"
+        )
+        
+        top_percent = st.slider(
+            "Процент топ терминов для отображения",
+            min_value=5,
+            max_value=30,
+            value=15,
+            step=5,
+            help="Выберите процент наиболее активных терминов для отображения"
+        )
+        
+        sort_by = st.selectbox(
+            "Сортировка терминов",
+            options=["first_year", "total_attention", "activity_span", "peak_density"],
+            index=0,
+            help="Критерий сортировки для выбора топ терминов"
+        )
+        
+        # Настройки для графика активных элементов за 5 лет
+        st.subheader("📈 Настройки Active Elements (5 Years)")
+        
+        active_hierarchy_level = st.selectbox(
+            "Уровень для анализа активности за 5 лет",
+            options=["Topic", "Subfield", "Field", "Domain", "Concepts"],
+            index=0,
+            key="active_hierarchy",
+            help="Выберите уровень иерархии для анализа наиболее активных элементов за последние 5 лет"
+        )
+        
+        top_n_active = st.slider(
+            "Количество топ элементов для отображения",
+            min_value=5,
+            max_value=30,
+            value=15,
+            step=5,
+            key="top_n_active",
+            help="Выберите количество наиболее активных элементов для отображения"
         )
         
         st.markdown("---")
@@ -3399,6 +3565,33 @@ def main():
             st.warning("⚠️ Сначала загрузите данные в разделе 'Загрузка данных'")
             return
         
+        # Дополнительные настройки для временных графиков
+        st.subheader("🎛️ Дополнительные настройки для временных графиков")
+        
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            hierarchy_level_viz = st.selectbox(
+                "Уровень иерархии (для Temporal Density & Active Elements)",
+                options=["Topic", "Subfield", "Field", "Domain", "Concepts"],
+                index=0,
+                key="viz_hierarchy"
+            )
+        
+        with col2:
+            top_percent_viz = st.slider(
+                "Топ % терминов (Temporal Density)",
+                min_value=5, max_value=30, value=15, step=5, key="viz_top_percent"
+            )
+        
+        with col3:
+            sort_by_viz = st.selectbox(
+                "Сортировка (Temporal Density)",
+                options=["first_year", "total_attention", "activity_span", "peak_density"],
+                index=0, key="viz_sort"
+            )
+        
+        st.markdown("---")
+        
         # Выбор графиков
         st.subheader("🎯 Выберите графики для генерации")
         
@@ -3423,11 +3616,12 @@ def main():
             "📚 Журналы и публикации": ["5_journal_heatmap", "21_journal_impact"],
             "🔗 Ссылки и цитирования": ["8_references_linear", "9_references_log", "17_cr_vs_oa", "20_references_attention"],
             "🏷️ Концепты и темы": ["10_concepts", "11_concept_cooccurrence", "12_concept_influence", "24_concept_network", "30_topic_chord"],
-            "⏰ Временной анализ": ["13_temporal_evolution", "14_temporal_heatmap", "29_animated_bubble"],
+            "⏰ Временной анализ": ["13_temporal_evolution", "14_temporal_heatmap", "25_term_temporal", "31_active_elements_5y"],
             "👥 Команды и организации": ["15_team_size", "28_network"],
-            "📊 Анализ метрик": ["16_correlation", "18_domain_citations", "23_mds", "25_parallel_coordinates"],
+            "📊 Анализ метрик": ["16_correlation", "18_domain_citations", "23_mds"],
             "🏛️ Иерархическая структура": ["22_hierarchical_sankey", "26_sunburst"],
-            "🎯 Многомерные графики": ["27_3d_bubble"]
+            "🎯 Многомерные графики": ["27_3d_bubble"],
+            "🎬 Анимированные графики": ["29_animated_bubble", "32_animated_journal_heatmap", "33_animated_country_chord", "34_animated_worldmap", "35_animated_top10_topics"]
         }
         
         for category, plot_ids in categories.items():
@@ -3452,6 +3646,14 @@ def main():
                 if not st.session_state.selected_plots:
                     st.error("❌ Выберите хотя бы один график")
                 else:
+                    # Обновляем настройки для временных графиков
+                    st.session_state.analyzer.plot_25_term_temporal_density = lambda: st.session_state.analyzer.plot_25_term_temporal_density(
+                        hierarchy_level_viz, top_percent_viz, sort_by_viz
+                    )
+                    st.session_state.analyzer.plot_31_active_elements_last_5_years = lambda: st.session_state.analyzer.plot_31_active_elements_last_5_years(
+                        hierarchy_level_viz, top_n_active
+                    )
+                    
                     with st.spinner("Генерация графиков..."):
                         st.session_state.analyzer.generate_all_plots(st.session_state.selected_plots)
                         st.session_state.plots_generated = True
@@ -3460,6 +3662,15 @@ def main():
         with col2:
             if st.button("🎯 Сгенерировать все графики", use_container_width=True):
                 st.session_state.selected_plots = [plot[0] for plot in ALL_PLOTS]
+                
+                # Обновляем настройки для временных графиков
+                st.session_state.analyzer.plot_25_term_temporal_density = lambda: st.session_state.analyzer.plot_25_term_temporal_density(
+                    hierarchy_level_viz, top_percent_viz, sort_by_viz
+                )
+                st.session_state.analyzer.plot_31_active_elements_last_5_years = lambda: st.session_state.analyzer.plot_31_active_elements_last_5_years(
+                    hierarchy_level_viz, top_n_active
+                )
+                
                 with st.spinner("Генерация всех графиков..."):
                     st.session_state.analyzer.generate_all_plots()
                     st.session_state.plots_generated = True
@@ -3489,6 +3700,20 @@ def main():
                     if hasattr(fig, 'update_layout'):
                         # Это plotly фигура
                         st.plotly_chart(fig, use_container_width=True)
+                        
+                        # Кнопка для скачивания анимации как HTML (для анимированных графиков)
+                        if selected_plot in ["29_animated_bubble", "32_animated_journal_heatmap", 
+                                            "33_animated_country_chord", "34_animated_worldmap", 
+                                            "35_animated_top10_topics"]:
+                            import plotly.io as pio
+                            html_str = pio.to_html(fig, include_plotlyjs='cdn', full_html=True)
+                            st.download_button(
+                                label="📥 Скачать анимацию как HTML",
+                                data=html_str,
+                                file_name=f"{selected_plot}_animation.html",
+                                mime="text/html",
+                                key=f"html_download_{selected_plot}"
+                            )
                     else:
                         # Это matplotlib фигура
                         st.pyplot(fig)
@@ -3548,22 +3773,43 @@ def main():
                 if hasattr(fig, 'update_layout'):
                     # plotly фигура
                     import plotly.io as pio
+                    
+                    # Для анимированных графиков предлагаем HTML
+                    if plot_id in ["29_animated_bubble", "32_animated_journal_heatmap", 
+                                   "33_animated_country_chord", "34_animated_worldmap", 
+                                   "35_animated_top10_topics"]:
+                        html_str = pio.to_html(fig, include_plotlyjs='cdn', full_html=True)
+                        st.download_button(
+                            label=f"📥 Скачать {selected_plot_name} как HTML",
+                            data=html_str,
+                            file_name=f"plot_{plot_id}_animation.html",
+                            mime="text/html",
+                            use_container_width=True
+                        )
+                    
+                    # Также предлагаем PNG
                     img_buffer = io.BytesIO()
                     pio.write_image(fig, img_buffer, format='png', width=1200, height=800, scale=2)
                     img_buffer.seek(0)
+                    st.download_button(
+                        label=f"📥 Скачать {selected_plot_name} как PNG",
+                        data=img_buffer,
+                        file_name=f"plot_{plot_id}.png",
+                        mime="image/png",
+                        use_container_width=True
+                    )
                 else:
                     # matplotlib фигура
                     img_buffer = io.BytesIO()
                     fig.savefig(img_buffer, format='png', dpi=300, bbox_inches='tight')
                     img_buffer.seek(0)
-                
-                st.download_button(
-                    label=f"📥 Скачать {selected_plot_name}",
-                    data=img_buffer,
-                    file_name=f"plot_{selected_plot_name[:20].replace(' ', '_')}.png",
-                    mime="image/png",
-                    use_container_width=True
-                )
+                    st.download_button(
+                        label=f"📥 Скачать {selected_plot_name}",
+                        data=img_buffer,
+                        file_name=f"plot_{plot_id}.png",
+                        mime="image/png",
+                        use_container_width=True
+                    )
         
         with col2:
             # Скачать все в ZIP
