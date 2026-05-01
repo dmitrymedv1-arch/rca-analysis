@@ -2559,6 +2559,525 @@ class ScientificDataAnalyzer:
         except Exception as e:
             self.log_error(f"Error in plot_25_term_temporal_density: {str(e)}")
             return None
+
+    # ==================== ГРАФИК 26: SUNBURST CHART ====================
+    def plot_26_sunburst_chart(self):
+        """26. Sunburst диаграмма: Domain → Field → Topic с цветом по среднему count"""
+        try:
+            required_cols = ['Domain', 'Field', 'Topic', 'count']
+            available_cols = [col for col in required_cols if col in self.df_processed.columns]
+            
+            if len(available_cols) < 2:
+                return None
+            
+            valid_data = self.df_processed.dropna(subset=available_cols)
+            if len(valid_data) < 10:
+                return None
+            
+            # Агрегируем данные для sunburst
+            hierarchy_data = valid_data.groupby(['Domain', 'Field', 'Topic']).agg({
+                'count': ['sum', 'mean', 'size']
+            }).reset_index()
+            
+            hierarchy_data.columns = ['Domain', 'Field', 'Topic', 'total_attention', 'mean_attention', 'num_papers']
+            
+            # Убираем пустые значения
+            hierarchy_data = hierarchy_data[hierarchy_data['Domain'].notna()]
+            hierarchy_data = hierarchy_data[hierarchy_data['Field'].notna()]
+            hierarchy_data = hierarchy_data[hierarchy_data['Topic'].notna()]
+            
+            if len(hierarchy_data) == 0:
+                return None
+            
+            # Создаем sunburst диаграмму
+            fig = px.sunburst(
+                hierarchy_data,
+                path=['Domain', 'Field', 'Topic'],
+                values='total_attention',
+                color='mean_attention',
+                color_continuous_scale='RdBu',
+                title="Sunburst Chart: Knowledge Structure (Domain → Field → Topic)<br>Color = Mean Attention, Size = Total Attention",
+                hover_data={'num_papers': True, 'mean_attention': ':.2f'}
+            )
+            
+            fig.update_layout(
+                width=1000,
+                height=800,
+                font=dict(size=11)
+            )
+            
+            # Сохраняем данные
+            self.plot_data['26_sunburst_chart'] = hierarchy_data.head(100).to_dict('records')
+            
+            return fig
+            
+        except Exception as e:
+            self.log_error(f"Error in plot_26_sunburst_chart: {str(e)}")
+            return None
+    
+    # ==================== ГРАФИК 27: 3D BUBBLE CHART ====================
+    def plot_27_3d_bubble_chart(self):
+        """27. 3D пузырьковая диаграмма: count vs max_citations vs references_count"""
+        try:
+            required_cols = ['count', 'max_citations', 'references_count', 'author count', 'num_countries']
+            if not all(col in self.df_processed.columns for col in required_cols):
+                return None
+            
+            valid_data = self.df_processed.dropna(subset=required_cols)
+            valid_data = valid_data[valid_data['max_citations'] > 0]
+            
+            if len(valid_data) < 10:
+                return None
+            
+            # Берем топ-200 для читаемости
+            if len(valid_data) > 200:
+                valid_data = valid_data.nlargest(200, 'count')
+            
+            fig = go.Figure(data=[go.Scatter3d(
+                x=valid_data['count'],
+                y=valid_data['max_citations'],
+                z=valid_data['references_count'],
+                mode='markers',
+                marker=dict(
+                    size=valid_data['author count'] * 3,
+                    color=valid_data['num_countries'],
+                    colorscale='Viridis',
+                    showscale=True,
+                    colorbar=dict(title="Number of Countries"),
+                    opacity=0.7,
+                    line=dict(width=0.5, color='black')
+                ),
+                text=valid_data['Title'],
+                hoverinfo='text',
+                hovertemplate='<b>%{text}</b><br>' +
+                              'Count: %{x}<br>' +
+                              'Max Citations: %{y}<br>' +
+                              'References: %{z}<br>' +
+                              'Authors: %{marker.size:.0f}<br>' +
+                              'Countries: %{marker.color}<extra></extra>'
+            )])
+            
+            fig.update_layout(
+                title="3D Bubble Chart: Attention vs Citations vs References",
+                scene=dict(
+                    xaxis_title="Local Mentions (count)",
+                    yaxis_title="Max Citations (max(CR, OA))",
+                    zaxis_title="Number of References",
+                    camera=dict(eye=dict(x=1.5, y=1.5, z=1.5))
+                ),
+                width=1000,
+                height=800,
+                margin=dict(l=0, r=0, b=0, t=50)
+            )
+            
+            # Сохраняем данные
+            self.plot_data['27_3d_bubble_chart'] = valid_data[required_cols].head(100).to_dict('records')
+            
+            return fig
+            
+        except Exception as e:
+            self.log_error(f"Error in plot_27_3d_bubble_chart: {str(e)}")
+            return None
+    
+    # ==================== ГРАФИК 28: СЕТЬ АВТОРЫ-ЖУРНАЛЫ-ТЕМЫ ====================
+    def plot_28_network_authors_journals_topics(self):
+        """28. Сетевой граф: Авторы ↔ Журналы ↔ Темы"""
+        try:
+            if 'authors_list' not in self.df_processed.columns or 'Full journal Name' not in self.df_processed.columns:
+                return None
+            
+            # Ограничиваем топ-10 авторов по count для читаемости
+            # Сначала собираем суммарный count по авторам
+            author_attention = defaultdict(float)
+            for idx, row in self.df_processed.iterrows():
+                if isinstance(row['authors_list'], list):
+                    weight = row.get('count', 1)
+                    for author in row['authors_list']:
+                        if author.strip():
+                            author_attention[author.strip()] += weight
+            
+            top_authors = [a for a, _ in sorted(author_attention.items(), key=lambda x: x[1], reverse=True)[:15]]
+            
+            # Топ-10 журналов
+            top_journals = self.df_processed['Full journal Name'].value_counts().head(10).index.tolist()
+            
+            # Топ-10 концептов
+            all_concepts = []
+            for concepts in self.df_processed['concepts_list']:
+                if isinstance(concepts, list):
+                    all_concepts.extend([c.strip() for c in concepts])
+            concept_counts = pd.Series(all_concepts).value_counts()
+            top_concepts = concept_counts.head(10).index.tolist()
+            
+            # Создаем граф
+            G = nx.Graph()
+            
+            # Добавляем узлы
+            for author in top_authors:
+                G.add_node(author, type='author', attention=author_attention[author])
+            for journal in top_journals:
+                G.add_node(journal, type='journal')
+            for concept in top_concepts:
+                G.add_node(concept, type='concept')
+            
+            # Добавляем ребра (автор-журнал)
+            for idx, row in self.df_processed.iterrows():
+                if isinstance(row['authors_list'], list) and row['Full journal Name'] in top_journals:
+                    weight = row.get('count', 1)
+                    for author in row['authors_list']:
+                        if author in top_authors:
+                            if G.has_edge(author, row['Full journal Name']):
+                                G[author][row['Full journal Name']]['weight'] += weight
+                            else:
+                                G.add_edge(author, row['Full journal Name'], weight=weight)
+            
+            # Добавляем ребра (журнал-концепт)
+            for idx, row in self.df_processed.iterrows():
+                if row['Full journal Name'] in top_journals and isinstance(row['concepts_list'], list):
+                    weight = row.get('count', 1)
+                    for concept in row['concepts_list']:
+                        if concept.strip() in top_concepts:
+                            if G.has_edge(row['Full journal Name'], concept.strip()):
+                                G[row['Full journal Name']][concept.strip()]['weight'] += weight
+                            else:
+                                G.add_edge(row['Full journal Name'], concept.strip(), weight=weight)
+            
+            if len(G.nodes()) == 0:
+                return None
+            
+            # Позиционирование узлов
+            pos = nx.spring_layout(G, k=1.5, seed=42)
+            
+            # Разделяем узлы по типам
+            author_nodes = [n for n in G.nodes() if G.nodes[n].get('type') == 'author']
+            journal_nodes = [n for n in G.nodes() if G.nodes[n].get('type') == 'journal']
+            concept_nodes = [n for n in G.nodes() if G.nodes[n].get('type') == 'concept']
+            
+            # Создаем фигуру plotly
+            fig = go.Figure()
+            
+            # Добавляем ребра
+            for u, v, data in G.edges(data=True):
+                weight = data.get('weight', 1)
+                line_width = 1 + weight / 10
+                
+                fig.add_trace(go.Scatter(
+                    x=[pos[u][0], pos[v][0]],
+                    y=[pos[u][1], pos[v][1]],
+                    mode='lines',
+                    line=dict(width=line_width, color='lightgray'),
+                    hoverinfo='none',
+                    showlegend=False
+                ))
+            
+            # Добавляем узлы-авторы
+            if author_nodes:
+                x_author = [pos[n][0] for n in author_nodes]
+                y_author = [pos[n][1] for n in author_nodes]
+                sizes = [G.nodes[n].get('attention', 1) * 10 + 20 for n in author_nodes]
+                
+                fig.add_trace(go.Scatter(
+                    x=x_author,
+                    y=y_author,
+                    mode='markers+text',
+                    marker=dict(size=sizes, color='#2E86AB', line=dict(width=1, color='black')),
+                    text=[n[:15] + '...' if len(n) > 15 else n for n in author_nodes],
+                    textposition='top center',
+                    textfont=dict(size=9),
+                    name='Authors',
+                    hovertemplate='<b>%{text}</b><br>Attention: %{marker.size}<extra></extra>'
+                ))
+            
+            # Добавляем узлы-журналы
+            if journal_nodes:
+                x_journal = [pos[n][0] for n in journal_nodes]
+                y_journal = [pos[n][1] for n in journal_nodes]
+                
+                fig.add_trace(go.Scatter(
+                    x=x_journal,
+                    y=y_journal,
+                    mode='markers+text',
+                    marker=dict(size=25, color='#C73E1D', line=dict(width=1, color='black'), symbol='square'),
+                    text=[n[:20] + '...' if len(n) > 20 else n for n in journal_nodes],
+                    textposition='top center',
+                    textfont=dict(size=8),
+                    name='Journals',
+                    hovertemplate='<b>%{text}</b><extra></extra>'
+                ))
+            
+            # Добавляем узлы-концепты
+            if concept_nodes:
+                x_concept = [pos[n][0] for n in concept_nodes]
+                y_concept = [pos[n][1] for n in concept_nodes]
+                
+                fig.add_trace(go.Scatter(
+                    x=x_concept,
+                    y=y_concept,
+                    mode='markers+text',
+                    marker=dict(size=20, color='#6B8E23', line=dict(width=1, color='black'), symbol='diamond'),
+                    text=[n[:15] + '...' if len(n) > 15 else n for n in concept_nodes],
+                    textposition='top center',
+                    textfont=dict(size=8),
+                    name='Concepts',
+                    hovertemplate='<b>%{text}</b><extra></extra>'
+                ))
+            
+            fig.update_layout(
+                title="Network Graph: Authors ↔ Journals ↔ Topics",
+                xaxis=dict(visible=False),
+                yaxis=dict(visible=False),
+                plot_bgcolor='white',
+                width=1200,
+                height=900,
+                hovermode='closest',
+                legend=dict(x=0.02, y=0.98, bgcolor='rgba(255,255,255,0.8)')
+            )
+            
+            # Сохраняем данные
+            self.plot_data['28_network_authors_journals_topics'] = {
+                'authors': author_nodes,
+                'journals': journal_nodes,
+                'concepts': concept_nodes,
+                'edges_count': G.number_of_edges()
+            }
+            
+            return fig
+            
+        except Exception as e:
+            self.log_error(f"Error in plot_28_network_authors_journals_topics: {str(e)}")
+            return None
+    
+    # ==================== ГРАФИК 29: АНИМИРОВАННАЯ ПУЗЫРЬКОВАЯ ДИАГРАММА ====================
+    def plot_29_animated_bubble_chart(self):
+        """29. Анимированная пузырьковая диаграмма по годам: count vs max_citations"""
+        try:
+            required_cols = ['year', 'count', 'max_citations', 'author count', 'num_countries']
+            if not all(col in self.df_processed.columns for col in required_cols):
+                return None
+            
+            valid_data = self.df_processed.dropna(subset=required_cols)
+            valid_data = valid_data[valid_data['max_citations'] > 0]
+            valid_data = valid_data[valid_data['year'].notna()]
+            
+            if len(valid_data) < 10:
+                return None
+            
+            # Преобразуем год в int
+            valid_data['year'] = valid_data['year'].astype(int)
+            
+            # Создаем анимированную диаграмму
+            fig = px.scatter(
+                valid_data,
+                x='count',
+                y='max_citations',
+                size='author count',
+                color='num_countries',
+                hover_name='Title',
+                animation_frame='year',
+                animation_group='doi',
+                size_max=50,
+                color_continuous_scale='Viridis',
+                title="Animated Bubble Chart: Attention vs Citations Over Time",
+                labels={
+                    'count': 'Local Mentions (count)',
+                    'max_citations': 'Max Citations (max(CR, OA))',
+                    'author count': 'Number of Authors',
+                    'num_countries': 'Number of Countries'
+                }
+            )
+            
+            fig.update_layout(
+                xaxis=dict(title="Local Mentions (count)", type="log"),
+                yaxis=dict(title="Max Citations (max(CR, OA))", type="log"),
+                height=700,
+                width=1000,
+                hovermode='closest'
+            )
+            
+            # Сохраняем данные
+            self.plot_data['29_animated_bubble_chart'] = valid_data[required_cols].to_dict('records')
+            
+            return fig
+            
+        except Exception as e:
+            self.log_error(f"Error in plot_29_animated_bubble_chart: {str(e)}")
+            return None
+    
+    # ==================== ГРАФИК 30: ХОРДОВАЯ ДИАГРАММА ТЕМ ====================
+    def plot_30_topic_chord_diagram(self):
+        """30. Хордовая диаграмма совместной встречаемости тем (Topic)"""
+        try:
+            if 'Topic' not in self.df_processed.columns:
+                return None
+            
+            # Собираем данные о совместной встречаемости Topic
+            topic_pairs = []
+            topic_weights = defaultdict(float)
+            
+            for idx, row in self.df_processed.iterrows():
+                topic = row['Topic']
+                if pd.notna(topic) and str(topic).strip():
+                    topic_str = str(topic).strip()
+                    weight = row.get('count', 1)
+                    topic_weights[topic_str] += weight
+            
+            if len(topic_weights) < 3:
+                self.log_warning("Insufficient data for topic chord diagram")
+                return None
+            
+            # Выбираем топ N тем
+            top_topics = sorted(topic_weights.items(), key=lambda x: x[1], reverse=True)[:15]
+            top_topic_names = [t[0] for t in top_topics]
+            
+            # Создаем матрицу связей (совместная встречаемость тем в разных статьях? 
+            # Topic уникален для статьи, поэтому связи строим через общие концепты или поля)
+            # Альтернатива: используем Subfield или Field для связей
+            
+            if 'Subfield' in self.df_processed.columns:
+                # Строим связи через общий Subfield
+                subfield_to_topics = defaultdict(list)
+                for idx, row in self.df_processed.iterrows():
+                    topic = row['Topic']
+                    subfield = row['Subfield']
+                    if pd.notna(topic) and pd.notna(subfield):
+                        subfield_to_topics[str(subfield)].append(str(topic))
+                
+                n = len(top_topic_names)
+                topic_to_idx = {name: i for i, name in enumerate(top_topic_names)}
+                adjacency_matrix = np.zeros((n, n))
+                
+                for subfield, topics in subfield_to_topics.items():
+                    unique_topics = list(set(topics))
+                    for i in range(len(unique_topics)):
+                        for j in range(i+1, len(unique_topics)):
+                            if unique_topics[i] in topic_to_idx and unique_topics[j] in topic_to_idx:
+                                i_idx = topic_to_idx[unique_topics[i]]
+                                j_idx = topic_to_idx[unique_topics[j]]
+                                adjacency_matrix[i_idx, j_idx] += 1
+                                adjacency_matrix[j_idx, i_idx] += 1
+                
+                # Создаем цветовую схему
+                colors = []
+                for i in range(n):
+                    hue = i / n
+                    rgb = colorsys.hsv_to_rgb(hue, 0.7, 0.9)
+                    color_hex = '#{:02x}{:02x}{:02x}'.format(int(rgb[0]*255), int(rgb[1]*255), int(rgb[2]*255))
+                    colors.append(color_hex)
+                
+                # Расставляем узлы по кругу
+                angles = np.linspace(0, 2 * np.pi, n, endpoint=False)
+                radius = 1.0
+                x_positions = radius * np.cos(angles)
+                y_positions = radius * np.sin(angles)
+                
+                # Позиции для текста снаружи
+                text_radius = 1.25
+                text_x = text_radius * np.cos(angles)
+                text_y = text_radius * np.sin(angles)
+                
+                # Создаем фигуру
+                fig = go.Figure()
+                
+                # Добавляем внешние метки
+                fig.add_trace(go.Scatter(
+                    x=text_x,
+                    y=text_y,
+                    mode='text',
+                    text=top_topic_names,
+                    textposition='middle center',
+                    textfont=dict(size=10, color='black', family='Arial, sans-serif'),
+                    hovertext=[f"<b>{name}</b><br>Total weight: {weight:.1f}" for name, weight in top_topics],
+                    hoverinfo='text',
+                    showlegend=False
+                ))
+                
+                # Добавляем узлы
+                fig.add_trace(go.Scatter(
+                    x=x_positions,
+                    y=y_positions,
+                    mode='markers',
+                    marker=dict(size=20, color=colors, line=dict(color='black', width=1.5)),
+                    hovertext=[f"<b>{name}</b><br>Total weight: {weight:.1f}" for name, weight in top_topics],
+                    hoverinfo='text',
+                    showlegend=False
+                ))
+                
+                # Добавляем хорды
+                max_weight = max(adjacency_matrix.flatten()) if adjacency_matrix.size > 0 else 1
+                
+                for i in range(n):
+                    for j in range(i+1, n):
+                        weight = adjacency_matrix[i, j]
+                        if weight > 0:
+                            t = np.linspace(0, 1, 100)
+                            p0 = np.array([x_positions[i], y_positions[i]])
+                            p3 = np.array([x_positions[j], y_positions[j]])
+                            
+                            mid_angle = (angles[i] + angles[j]) / 2
+                            if abs(angles[i] - angles[j]) > np.pi:
+                                mid_angle += np.pi
+                            control_offset = 0.4 * (1 + weight / max_weight)
+                            ctrl_point = np.array([control_offset * np.cos(mid_angle), control_offset * np.sin(mid_angle)])
+                            
+                            curve_x = (1-t)**3 * p0[0] + 3*(1-t)**2*t * ctrl_point[0] + 3*(1-t)*t**2 * ctrl_point[0] + t**3 * p3[0]
+                            curve_y = (1-t)**3 * p0[1] + 3*(1-t)**2*t * ctrl_point[1] + 3*(1-t)*t**2 * ctrl_point[1] + t**3 * p3[1]
+                            
+                            start_rgb = [int(colors[i][1:3], 16), int(colors[i][3:5], 16), int(colors[i][5:7], 16)]
+                            end_rgb = [int(colors[j][1:3], 16), int(colors[j][3:5], 16), int(colors[j][5:7], 16)]
+                            mixed_rgb = [(start_rgb[k] + end_rgb[k]) // 2 for k in range(3)]
+                            chord_color = f'rgba({mixed_rgb[0]}, {mixed_rgb[1]}, {mixed_rgb[2]}, 0.8)'
+                            
+                            line_width = 2 + 10 * weight / max_weight
+                            
+                            fig.add_trace(go.Scatter(
+                                x=curve_x,
+                                y=curve_y,
+                                mode='lines',
+                                line=dict(width=line_width, color=chord_color),
+                                hoverinfo='none',
+                                showlegend=False
+                            ))
+                
+                # Добавляем внутренний круг
+                theta = np.linspace(0, 2*np.pi, 100)
+                inner_radius = 0.85
+                fig.add_trace(go.Scatter(
+                    x=inner_radius * np.cos(theta),
+                    y=inner_radius * np.sin(theta),
+                    mode='lines',
+                    line=dict(color='white', width=2),
+                    fill='toself',
+                    fillcolor='rgba(240, 240, 240, 0.3)',
+                    hoverinfo='none',
+                    showlegend=False
+                ))
+                
+                fig.update_layout(
+                    title=f"Topic Co-occurrence Chord Diagram (Top {len(top_topics)} Topics)",
+                    width=1000,
+                    height=1000,
+                    xaxis=dict(visible=False, range=[-1.5, 1.5], scaleanchor="y", scaleratio=1),
+                    yaxis=dict(visible=False, range=[-1.5, 1.5]),
+                    plot_bgcolor='white',
+                    paper_bgcolor='white',
+                    showlegend=False,
+                    hovermode='closest'
+                )
+                
+                # Сохраняем данные
+                self.plot_data['30_topic_chord_diagram'] = {
+                    'topics': top_topic_names,
+                    'adjacency_matrix': adjacency_matrix.tolist()
+                }
+                
+                return fig
+            else:
+                self.log_warning("Subfield column not found for topic chord diagram")
+                return None
+            
+        except Exception as e:
+            self.log_error(f"Error in plot_30_topic_chord_diagram: {str(e)}")
+            return None
     
     # ==================== НОВЫЙ ГРАФИК 31: АКТИВНЫЕ ЭЛЕМЕНТЫ ЗА ПОСЛЕДНИЕ 5 ЛЕТ ====================
     def plot_31_active_elements_last_5_years(self, hierarchy_level='Topic', top_n=15):
